@@ -80,6 +80,8 @@
 #define NUM_RRL_REG		7
 /* Max correctable error count registers. */
 #define NUM_CECNT_REG		8
+/* Max debug registers. */
+#define NUM_DBG_REG		18
 
 /* Error source from which the RRL registers log errors. */
 enum rrl_source_type {
@@ -122,6 +124,12 @@ struct reg_rrl {
 	int cecnt_num;
 	u32 cecnt_offsets[NUM_CECNT_REG];
 	u8 cecnt_widths[NUM_CECNT_REG];
+
+	/* Debug register parts. */
+	int dbg_num;
+	u32 dbg_offsets[NUM_DBG_REG];
+	u32 dbg_widths[NUM_DBG_REG];
+	const char *dbg_schema;
 };
 
 /*

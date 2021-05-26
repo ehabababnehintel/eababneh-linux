@@ -311,6 +311,26 @@ void skx_show_rrl(struct decoded_addr *res, char *msg, int len, bool scrub_err)
 		n--;
 		n += scnprintf(msg + n, len - n, "]");
 	}
+
+	if (rrl->dbg_num && len - n > 0) {
+		n += snprintf(msg + n, len - n, " edac_schema:%s edac_debug[",
+			      rrl->dbg_schema ? rrl->dbg_schema : "");
+
+		for (i = 0; i < rrl->dbg_num && len - n > 0; i++) {
+			offset = rrl->dbg_offsets[i];
+			width = rrl->dbg_widths[i];
+			log = skx_read_imc_reg(imc, ch, offset, width);
+
+			if (width == 4)
+				n += snprintf(msg + n, len - n, "%.8llx ", log );
+			else
+				n += snprintf(msg + n, len - n, "%.16llx ", log);
+		}
+
+		/* Move back one space. */
+		n--;
+		n += snprintf(msg + n, len - n, "]");
+	}
 }
 EXPORT_SYMBOL_GPL(skx_show_rrl);
 

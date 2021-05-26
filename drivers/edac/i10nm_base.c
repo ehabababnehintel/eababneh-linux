@@ -116,6 +116,39 @@ static struct reg_rrl spr_reg_rrl_ddr = {
 	.cecnt_num	= 4,
 	.cecnt_offsets	= {0x22c18, 0x22c1c, 0x22c20, 0x22c24},
 	.cecnt_widths	= {4, 4, 4, 4},
+
+	.dbg_num	= 18,
+	.dbg_offsets	= {
+		0x22cc0, 0x22cc4, 0x22c44, 0x22c48, 0x2099c, 0x20998,
+		0x20994, 0x20990, 0x209a0, 0x209a4, 0x209a8, 0x209ac,
+		0x209b0, 0x23008, 0x2300c, 0x23030, 0x23034, 0x23010
+	},
+	.dbg_widths	= {
+		4, 4, 4, 4, 4, 4,
+		4, 4, 4, 4, 4, 4,
+		4, 4, 4, 4, 4, 4
+	},
+	.dbg_schema	= "v0.1.0",
+	/*
+	 * "CORRECTION_DEBUG_DEV_VEC_1",
+	 * "CORRECTION_DEBUG_DEV_VEC_2",
+	 * "CORRECTION_DEBUG_LOG",
+	 * "CORRECTION_DEBUG_PLUS1_LOG",
+	 * "RSP_FUNC_ADDR_MASK_HI",
+	 * "RSP_FUNC_ADDR_MASK_LO",
+	 * "RSP_FUNC_ADDR_MATCH_HI",
+	 * "RSP_FUNC_ADDR_MATCH_LO",
+	 * "RSP_FUNC_RANK_BANK_MATCH",
+	 * "RSP_FUNC_ADDR2_MATCH_LO",
+	 * "RSP_FUNC_ADDR2_MATCH_HI",
+	 * "RSP_FUNC_ADDR2_MASK_LO",
+	 * "RSP_FUNC_ADDR2_MASK_HI",
+	 * "RSP_FUNC_CRC_ERR_INJ_DEV0_XOR_MSK",
+	 * "RSP_FUNC_CRC_ERR_INJ_DEV1_XOR_MSK",
+	 * "RSP_FUNC_CRC_ERR_INJ_DEV0_XOR_MSK2",
+	 * "RSP_FUNC_CRC_ERR_INJ_DEV1_XOR_MSK2",
+	 * "RSP_FUNC_CRC_ERR_INJ_EXTRA"
+	 */
 };
 
 static struct reg_rrl spr_reg_rrl_hbm_pch0 = {
