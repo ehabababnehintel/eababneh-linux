@@ -110,6 +110,18 @@ static int __init ifs_init(void)
 			continue;
 		ifs_devices[i].rw_data.generation = FIELD_GET(MSR_INTEGRITY_CAPS_SAF_GEN_MASK,
 							      msrval);
+		/*
+		 * For Sapphire Rapids and Emerald Rapids (SAF_GEN=0), the ALL_LP_JOIN
+		 * indicator is unavailable. However, all the threads within a core still
+		 * need to run IFS simultaneously, so the variable 'all_lp_join' is
+		 * forced to true.
+		 *
+		 * For Granite Rapids and later generations (SAF_GEN=2), the ALL_LP_JOIN
+		 * indicator is available, the variable 'all_lp_join' is determined by
+		 * this indicator.
+		 */
+		ifs_devices[i].rw_data.all_lp_join = ifs_devices[i].rw_data.generation ?
+						(msrval & MSR_INTEGRITY_CAPS_ALL_LP_JOIN) : true;
 		ifs_devices[i].rw_data.array_gen = (u32)m->driver_data;
 		ret = misc_register(&ifs_devices[i].misc);
 		if (ret)
