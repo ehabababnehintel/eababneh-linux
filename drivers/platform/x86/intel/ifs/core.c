@@ -23,6 +23,7 @@ static const struct x86_cpu_id ifs_cpu_ids[] __initconst = {
 	X86_MATCH(INTEL_ATOM_CRESTMONT_X, ARRAY_GEN1),
 	X86_MATCH(INTEL_ATOM_DARKMONT_X, ARRAY_GEN1),
 	X86_MATCH(INTEL_DIAMONDRAPIDS_X, ARRAY_GEN0),
+	X86_MATCH(INTEL_PANTHERLAKE_L, ARRAY_GEN1),
 	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, ifs_cpu_ids);
@@ -149,6 +150,8 @@ static int __init ifs_init(void)
 		if (ret)
 			goto err_exit;
 	}
+    if (boot_cpu_data.x86_vfm == INTEL_PANTHERLAKE_L)
+	    pr_warn("Experimental IFS support only on PTL e-cores\n");
 	return 0;
 
 err_exit:
