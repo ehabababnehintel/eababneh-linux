@@ -49,6 +49,8 @@ static const struct ifs_test_msrs scan_msrs = {
 	.test_ctrl = MSR_SAF_CTRL,
 };
 
+DEFINE_PER_CPU(struct ifs_test_output, ifs_scan_n);
+
 static struct ifs_device ifs_devices[] = {
 	[IFS_TYPE_SAF] = {
 		.test_caps = &scan_test,
@@ -58,6 +60,9 @@ static struct ifs_device ifs_devices[] = {
 			.minor = MISC_DYNAMIC_MINOR,
 			.groups = plat_ifs_groups,
 		},
+		.rw_data = {
+			.result_ptr = &ifs_scan_n,
+		}
 	},
 	[IFS_TYPE_ARRAY_BIST] = {
 		.test_caps = &array_test,
@@ -86,7 +91,7 @@ static int __init ifs_init(void)
 {
 	const struct x86_cpu_id *m;
 	u64 msrval;
-	int i, ret;
+	int i, ret, cpu;
 
 	m = x86_match_cpu(ifs_cpu_ids);
 	if (!m)
@@ -104,6 +109,13 @@ static int __init ifs_init(void)
 	ifs_pkg_auth = kmalloc_objs(bool, topology_max_packages());
 	if (!ifs_pkg_auth)
 		return -ENOMEM;
+
+	/*
+	 * Clear the per-CPU results before misc_register() below makes
+	 * run_test visible to user space, so no test can be running yet.
+	 */
+	for_each_possible_cpu(cpu)
+		memset(per_cpu_ptr(&ifs_scan_n, cpu), 0, sizeof(struct ifs_test_output));
 
 	for (i = 0; i < IFS_NUMTESTS; i++) {
 		if (!(msrval & BIT(ifs_devices[i].test_caps->integrity_cap_bit)))
