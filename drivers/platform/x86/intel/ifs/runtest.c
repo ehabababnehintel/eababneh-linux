@@ -29,7 +29,6 @@
 struct run_params {
 	struct ifs_data *ifsd;
 	union ifs_scan *activate;
-	union ifs_status status;
 };
 
 struct run_array_params {
@@ -85,25 +84,21 @@ static void message_not_tested(struct device *dev, int cpu, union ifs_status sta
 	 * been corrupted. Reloading the image may fix this issue.
 	 */
 	if (status.control_error) {
-		dev_warn(dev, "CPU(s) %*pbl: Scan controller error. Batch: %02x version: 0x%x\n",
-			 cpumask_pr_args(cpu_smt_mask(cpu)), ifsd->cur_batch, ifsd->loaded_version);
+		dev_warn(dev, "CPU %d: Scan controller error. Batch: %02x version: 0x%x\n", cpu,
+			 ifsd->cur_batch, ifsd->loaded_version);
 		return;
 	}
 
 	if (status.error_code < ARRAY_SIZE(scan_test_status)) {
-		dev_info(dev, "CPU(s) %*pbl: SCAN operation did not start. %s\n",
-			 cpumask_pr_args(cpu_smt_mask(cpu)),
+		dev_info(dev, "CPU %d: SCAN operation did not start. %s\n", cpu,
 			 scan_test_status[status.error_code]);
 	} else if (status.error_code == IFS_SW_TIMEOUT) {
-		dev_info(dev, "CPU(s) %*pbl: software timeout during scan\n",
-			 cpumask_pr_args(cpu_smt_mask(cpu)));
+		dev_info(dev, "CPU %d: software timeout during scan\n", cpu);
 	} else if (status.error_code == IFS_SW_PARTIAL_COMPLETION) {
-		dev_info(dev, "CPU(s) %*pbl: %s\n",
-			 cpumask_pr_args(cpu_smt_mask(cpu)),
+		dev_info(dev, "CPU %d: %s\n", cpu,
 			 "Not all scan chunks were executed. Maximum forward progress retries exceeded");
 	} else {
-		dev_info(dev, "CPU(s) %*pbl: SCAN unknown status %llx\n",
-			 cpumask_pr_args(cpu_smt_mask(cpu)), status.data);
+		dev_info(dev, "CPU %d: SCAN unknown status %llx\n", cpu, status.data);
 	}
 }
 
@@ -119,8 +114,8 @@ static void message_fail(struct device *dev, int cpu, union ifs_status status)
 	 * the core being tested.
 	 */
 	if (status.signature_error) {
-		dev_err(dev, "CPU(s) %*pbl: test signature incorrect. Batch: %02x version: 0x%x\n",
-			cpumask_pr_args(cpu_smt_mask(cpu)), ifsd->cur_batch, ifsd->loaded_version);
+		dev_err(dev, "CPU %d: test signature incorrect. Batch: %02x version: 0x%x\n",
+			cpu, ifsd->cur_batch, ifsd->loaded_version);
 	}
 }
 
@@ -191,13 +186,14 @@ static void ifs_stop_cpus(struct ifs_data *ifsd, int cpu, cpu_stop_fn_t fn, void
  */
 static int doscan(void *data)
 {
-	int cpu = smp_processor_id(), start, stop;
+	struct ifs_test_output *pcpu_scan;
 	struct run_params *params = data;
 	union ifs_status status;
 	struct ifs_data *ifsd;
-	int first;
+	int start, stop;
 
 	ifsd = params->ifsd;
+	pcpu_scan = this_cpu_ptr(ifsd->result_ptr);
 
 	if (ifsd->generation) {
 		start = params->activate->gen2.start;
@@ -206,9 +202,6 @@ static int doscan(void *data)
 		start = params->activate->gen0.start;
 		stop = params->activate->gen0.stop;
 	}
-
-	/* Only the first logical CPU on a core reports result */
-	first = cpumask_first(&ifsd->grp_cpumask);
 
 	wait_for_sibling_cpu(ifsd, &scan_cpus_in, NSEC_PER_SEC);
 
@@ -225,11 +218,106 @@ static int doscan(void *data)
 
 	trace_ifs_status(ifsd->cur_batch, start, stop, status.data);
 
-	/* Pass back the result of the scan */
-	if (cpu == first)
-		params->status = status;
+	pcpu_scan->test_details = status.data;
 
 	return 0;
+}
+
+static union ifs_status *get_scan_status(struct ifs_test_output *pcpu_scan)
+{
+	return (union ifs_status *)&pcpu_scan->test_details;
+}
+
+/* Iterate over the per-CPU scan results of all CPUs in the test group */
+#define for_each_group_scan_status(lcpu, ifsd, pcpu_scan, scan_status)		\
+	for ((lcpu) = cpumask_first(&(ifsd)->grp_cpumask);			\
+	     (lcpu) < nr_cpu_ids &&						\
+	     ((pcpu_scan) = per_cpu_ptr((ifsd)->result_ptr, (lcpu)),		\
+	      (scan_status) = get_scan_status(pcpu_scan), true);		\
+	     (lcpu) = cpumask_next((lcpu), &(ifsd)->grp_cpumask))
+
+static bool can_restart_test_group(struct device *dev)
+{
+	struct ifs_data *ifsd = ifs_get_data(dev);
+	struct ifs_test_output *pcpu_scan;
+	union ifs_status *scan_status;
+	int lcpu;
+
+	for_each_group_scan_status(lcpu, ifsd, pcpu_scan, scan_status) {
+		if (!can_restart(*scan_status))
+			return false;
+	}
+	return true;
+}
+
+/*
+ * The cores in a group can stop at different chunks. Return the lowest
+ * chunk reached so that no CPU skips chunks when the test is restarted.
+ */
+static u32 group_min_chunk(struct ifs_data *ifsd)
+{
+	struct ifs_test_output *pcpu_scan;
+	union ifs_status *scan_status;
+	u32 chunk, min_chunk = U32_MAX;
+	int lcpu;
+
+	for_each_group_scan_status(lcpu, ifsd, pcpu_scan, scan_status) {
+		chunk = ifsd->generation ? scan_status->gen2.chunk_num :
+			scan_status->gen0.chunk_num;
+		min_chunk = min(min_chunk, chunk);
+	}
+
+	return min_chunk;
+}
+
+/* Group result precedence: any failure, then any untested CPU, then pass */
+static const int result_rank[] = {
+	[SCAN_TEST_PASS] = 0,
+	[SCAN_NOT_TESTED] = 1,
+	[SCAN_TEST_FAIL] = 2,
+};
+
+/*
+ * Set the result of every CPU in the group. @reason is the software error
+ * code for a CPU that stopped before @stop_chunk without an error code of
+ * its own. The group passes only if all CPUs passed; otherwise ifsd->status
+ * and ifsd->scan_details report the first CPU with the worst result.
+ */
+static void update_group_result(struct device *dev, int stop_chunk, int reason)
+{
+	struct ifs_data *ifsd = ifs_get_data(dev);
+	struct ifs_test_output *pcpu_scan;
+	union ifs_status *scan_status;
+	int lcpu, report_cpu = ifsd->cpu;
+	u32 reached_chunk;
+
+	ifsd->status = SCAN_TEST_PASS;
+
+	for_each_group_scan_status(lcpu, ifsd, pcpu_scan, scan_status) {
+		reached_chunk = ifsd->generation ? scan_status->gen2.chunk_num :
+				scan_status->gen0.chunk_num;
+
+		if (scan_status->signature_error) {
+			pcpu_scan->test_result = SCAN_TEST_FAIL;
+			message_fail(dev, lcpu, *scan_status);
+		} else if (scan_status->control_error || scan_status->error_code ||
+			   reached_chunk <= stop_chunk) {
+			/* E.g. timeout, or another CPU in the group stopped the scan */
+			if (!scan_status->control_error && !scan_status->error_code)
+				scan_status->error_code = reason;
+			pcpu_scan->test_result = SCAN_NOT_TESTED;
+			message_not_tested(dev, lcpu, *scan_status);
+		} else {
+			pcpu_scan->test_result = SCAN_TEST_PASS;
+		}
+
+		if (result_rank[pcpu_scan->test_result] > result_rank[ifsd->status]) {
+			ifsd->status = pcpu_scan->test_result;
+			report_cpu = lcpu;
+		}
+	}
+
+	ifsd->scan_details = per_cpu_ptr(ifsd->result_ptr, report_cpu)->test_details;
 }
 
 /*
@@ -240,16 +328,24 @@ static int doscan(void *data)
  */
 static void ifs_test_core(int cpu, struct device *dev)
 {
-	union ifs_status status = {};
+	int reason = IFS_SW_PARTIAL_COMPLETION;
 	union ifs_scan activate;
 	unsigned long timeout;
 	struct ifs_data *ifsd;
 	int to_start, to_stop;
 	int status_chunk;
 	struct run_params params;
-	int retries;
+	int retries, lcpu;
 
 	ifsd = ifs_get_data(dev);
+	ifsd->cpu = cpu;
+
+	/* Don't let results from a previous test leak into this one */
+	for_each_cpu(lcpu, &ifsd->grp_cpumask) {
+		struct ifs_test_output *out = per_cpu_ptr(ifsd->result_ptr, lcpu);
+
+		memset(out, 0, sizeof(*out));
+	}
 
 	activate.gen0.rsvd = 0;
 	activate.delay = IFS_THREAD_WAIT;
@@ -272,7 +368,7 @@ static void ifs_test_core(int cpu, struct device *dev)
 
 	while (to_start <= to_stop) {
 		if (time_after(jiffies, timeout)) {
-			status.error_code = IFS_SW_TIMEOUT;
+			reason = IFS_SW_TIMEOUT;
 			break;
 		}
 
@@ -280,20 +376,15 @@ static void ifs_test_core(int cpu, struct device *dev)
 		atomic_set(&scan_cpus_in, 0);
 		ifs_stop_cpus(ifsd, cpu, doscan, &params);
 
-		status = params.status;
-
 		/* Some cases can be retried, give up for others */
-		if (!can_restart(status))
+		if (!can_restart_test_group(dev))
 			break;
 
-		status_chunk = ifsd->generation ? status.gen2.chunk_num : status.gen0.chunk_num;
+		status_chunk = group_min_chunk(ifsd);
 		if (status_chunk == to_start) {
 			/* Check for forward progress */
-			if (--retries == 0) {
-				if (status.error_code == IFS_NO_ERROR)
-					status.error_code = IFS_SW_PARTIAL_COMPLETION;
+			if (--retries == 0)
 				break;
-			}
 		} else {
 			retries = MAX_IFS_RETRIES;
 			if (ifsd->generation)
@@ -304,18 +395,7 @@ static void ifs_test_core(int cpu, struct device *dev)
 		}
 	}
 
-	/* Update status for this core */
-	ifsd->scan_details = status.data;
-
-	if (status.signature_error) {
-		ifsd->status = SCAN_TEST_FAIL;
-		message_fail(dev, cpu, status);
-	} else if (status.control_error || status.error_code) {
-		ifsd->status = SCAN_NOT_TESTED;
-		message_not_tested(dev, cpu, status);
-	} else {
-		ifsd->status = SCAN_TEST_PASS;
-	}
+	update_group_result(dev, to_stop, reason);
 }
 
 static int do_array_test(void *data)
@@ -324,7 +404,6 @@ static int do_array_test(void *data)
 	int cpu = smp_processor_id();
 	union ifs_array *command;
 	struct ifs_data *ifsd;
-	int first;
 
 	ifsd = params->ifsd;
 
@@ -334,9 +413,7 @@ static int do_array_test(void *data)
 	/*
 	 * Only one logical CPU on a core needs to trigger the Array test via MSR write.
 	 */
-	first = cpumask_first(&ifsd->grp_cpumask);
-
-	if (cpu == first) {
+	if (cpu == ifsd->cpu) {
 		wrmsrq(MSR_ARRAY_BIST, command->data);
 		/* Pass back the result of the test */
 		rdmsrq(MSR_ARRAY_BIST, command->data);
@@ -354,6 +431,7 @@ static void ifs_array_test_core(int cpu, struct device *dev)
 	unsigned long timeout;
 
 	ifsd = ifs_get_data(dev);
+	ifsd->cpu = cpu;
 	params.ifsd = ifsd;
 
 	command.array_bitmask = ~0U;
