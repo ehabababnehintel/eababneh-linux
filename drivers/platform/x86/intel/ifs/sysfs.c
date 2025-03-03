@@ -135,6 +135,63 @@ static ssize_t image_version_show(struct device *dev,
 
 static DEVICE_ATTR_RO(image_version);
 
+static ssize_t status_list_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct ifs_data *ifsd = ifs_get_data(dev);
+	struct ifs_test_output *pcpu_state;
+	int lcpu, len = 0;
+
+	for_each_cpu(lcpu, &ifsd->grp_cpumask) {
+		pcpu_state = per_cpu_ptr(ifsd->result_ptr, lcpu);
+		len += sysfs_emit_at(buf, len, "%s%s", (len > 0) ? " " : "",
+				     status_msg[pcpu_state->test_result]);
+	}
+
+	if (!len)
+		return sysfs_emit(buf, "%s\n", "none");
+
+	len += sysfs_emit_at(buf, len, "\n");
+
+	return len;
+}
+
+static DEVICE_ATTR_RO(status_list);
+
+static ssize_t details_list_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct ifs_data *ifsd = ifs_get_data(dev);
+	struct ifs_test_output *pcpu_state;
+	int lcpu, len = 0;
+
+	for_each_cpu(lcpu, &ifsd->grp_cpumask) {
+		pcpu_state = per_cpu_ptr(ifsd->result_ptr, lcpu);
+		len += sysfs_emit_at(buf, len, "%s%#llx", (len > 0) ? " " : "",
+				     pcpu_state->test_details);
+	}
+
+	if (!len)
+		return sysfs_emit(buf, "%s\n", "none");
+
+	len += sysfs_emit_at(buf, len, "\n");
+
+	return len;
+}
+
+static DEVICE_ATTR_RO(details_list);
+
+static ssize_t cpus_ran_list_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct ifs_data *ifsd = ifs_get_data(dev);
+	int len;
+
+	len = sysfs_emit(buf, "%*pbl", cpumask_pr_args(&ifsd->grp_cpumask));
+	if (!len)
+		return sysfs_emit(buf, "%s\n", "none");
+
+	return len + sysfs_emit_at(buf, len, "\n");
+}
+
+static DEVICE_ATTR_RO(cpus_ran_list);
 /* global scan sysfs attributes */
 struct attribute *plat_ifs_attrs[] = {
 	&dev_attr_details.attr,
@@ -142,6 +199,9 @@ struct attribute *plat_ifs_attrs[] = {
 	&dev_attr_run_test.attr,
 	&dev_attr_current_batch.attr,
 	&dev_attr_image_version.attr,
+	&dev_attr_status_list.attr,
+	&dev_attr_details_list.attr,
+	&dev_attr_cpus_ran_list.attr,
 	NULL
 };
 
