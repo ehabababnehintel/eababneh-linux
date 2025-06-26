@@ -493,6 +493,7 @@ static int __handle_changed_spte(struct kvm *kvm, struct kvm_mmu_page *sp,
 	bool is_leaf = is_present && is_last_spte(new_spte, level);
 	bool pfn_changed = spte_to_pfn(old_spte) != spte_to_pfn(new_spte);
 	int as_id = kvm_mmu_page_as_id(sp);
+	tdp_ptep_t pt;
 
 	WARN_ON_ONCE(level > PT64_ROOT_MAX_LEVEL);
 	WARN_ON_ONCE(level < PG_LEVEL_4K);
@@ -566,7 +567,9 @@ static int __handle_changed_spte(struct kvm *kvm, struct kvm_mmu_page *sp,
 	 */
 	if (was_present && !was_leaf &&
 	    (is_leaf || !is_present || WARN_ON_ONCE(pfn_changed))) {
-		handle_removed_pt(kvm, spte_to_child_pt(old_spte, level), shared);
+		pt = spte_to_child_pt(old_spte, level);
+		if (pt)
+			handle_removed_pt(kvm, pt, shared);
 	} else if (is_mirror_sp(sp)) {
 		int r;
 

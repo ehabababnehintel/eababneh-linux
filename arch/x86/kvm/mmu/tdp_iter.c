@@ -41,7 +41,8 @@ void tdp_iter_start(struct tdp_iter *iter, struct kvm_mmu_page *root,
 {
 	if (WARN_ON_ONCE(!root || (root->role.level < 1) ||
 			 (root->role.level > PT64_ROOT_MAX_LEVEL) ||
-			 (gfn_bits && next_last_level_gfn >= gfn_bits))) {
+			 (gfn_bits && next_last_level_gfn >= gfn_bits)) ||
+			 unlikely(is_hwpoisoned_root_pt(root->spt))) {
 		iter->valid = false;
 		return;
 	}
@@ -59,15 +60,25 @@ void tdp_iter_start(struct tdp_iter *iter, struct kvm_mmu_page *root,
 /*
  * Given an SPTE and its level, returns a pointer containing the host virtual
  * address of the child page table referenced by the SPTE. Returns null if
- * there is no such entry.
+ * there is no such entry or the child page table is hardware-poisoned.
  */
 tdp_ptep_t spte_to_child_pt(u64 spte, int level)
 {
 	/*
-	 * There's no child entry if this entry isn't present or is a
-	 * last-level entry.
+	 * There's no child entry if this entry isn't present, is a
+	 * last-level entry, or points to a hardware-poisoned child
+	 * page table.
+	 *
+	 * If the child page table is hardware-poisoned, it indicates
+	 * a machine check occurred during the hardware page walk on
+	 * the child page table, and the machine check handler marked
+	 * it as hardware-poisoned. KVM is currently recovering from the
+	 * machine check to prevent system shutdown, e.g. by destroying
+	 * the affected VM. Don't step down to the hardware-poisoned child
+	 * page table to prevent triggering another fatal machine check.
 	 */
-	if (!is_shadow_present_pte(spte) || is_last_spte(spte, level))
+	if (!is_shadow_present_pte(spte) || is_last_spte(spte, level) ||
+	    unlikely(is_hwpoisoned_child_pt(spte)))
 		return NULL;
 
 	return (tdp_ptep_t)__va(spte_to_pfn(spte) << PAGE_SHIFT);

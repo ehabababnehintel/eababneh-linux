@@ -362,6 +362,17 @@ static inline kvm_pfn_t spte_to_pfn(u64 pte)
 	return (pte & SPTE_BASE_ADDR_MASK) >> PAGE_SHIFT;
 }
 
+static inline bool is_hwpoisoned_root_pt(u64 *spt)
+{
+	return PageHWPoison(virt_to_page(spt));
+}
+
+/* Note: The @spte must be a present non-leaf SPTE. */
+static inline bool is_hwpoisoned_child_pt(u64 spte)
+{
+	return PageHWPoison(pfn_to_page(spte_to_pfn(spte)));
+}
+
 static inline bool is_accessed_spte(u64 spte)
 {
 	return spte & shadow_accessed_mask;
