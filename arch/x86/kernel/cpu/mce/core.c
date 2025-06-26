@@ -1490,6 +1490,27 @@ static void queue_task_work(struct mce_hw_err *err, char *msg, void (*func)(stru
 	task_work_add(current, &current->mce_kill_me, TWA_RESUME);
 }
 
+static void handle_mce_on_tdp_pgwalk(struct mce *m, struct pt_regs *regs)
+{
+	if (mce_usable_address(m)) {
+		struct page *p = pfn_to_online_page((m->addr & MCI_ADDR_PHYSADDR) >> PAGE_SHIFT);
+
+		if (p)
+			SetPageHWPoison(p);
+	}
+
+	/*
+	 * The pt_regs structure is faked from kvm_machine_check(), and
+	 * regs->ax is zeroed in kvm_machine_check().
+	 *
+	 * It's safe to set regs->ax to MCE_IN_GUEST_PAGE_WALK_ON_TDP
+	 * to notify the KVM that the #MC happened in the guest during page
+	 * walking on the TDP table. KVM will handle further recovery and
+	 * cleanup, such as destroying the VM.
+	 */
+	regs->ax = MCE_IN_GUEST_PAGE_WALK_ON_TDP;
+}
+
 /* Handle unconfigured int18 (should never happen) */
 static noinstr void unexpected_machine_check(struct pt_regs *regs)
 {
@@ -1660,6 +1681,20 @@ noinstr void do_machine_check(struct pt_regs *regs)
 	if ((m->cs & 3) == 3) {
 		/* If this triggers there is no way to recover. Die hard. */
 		BUG_ON(!on_thread_stack() || !user_mode(regs));
+
+		/*
+		 * This #MC happened in the guest during page walking on the
+		 * TDP (Two-Dimensional Page) table. The #MC handler was invoked
+		 * from kvm_machine_check() on the VM exit path.
+		 *
+		 * Mark the TDP table page as poisoned and leave the rest of the
+		 * recovery and cleanup work to the VMM, e.g. destroying the VM and
+		 * preventing the KVM accessing or zapping the poisoned TDP table.
+		 */
+		if (m->kflags & MCE_IN_GUEST_PAGE_WALK_ON_TDP) {
+			handle_mce_on_tdp_pgwalk(m, regs);
+			goto out;
+		}
 
 		if (!mce_usable_address(m))
 			queue_task_work(&err, msg, kill_me_now);
