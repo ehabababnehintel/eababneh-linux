@@ -77,12 +77,17 @@
  */
 #define MCACOD		  0xefff     /* MCA Error Code */
 
-/* Architecturally defined codes from SDM Vol. 3B Chapter 15 */
-#define MCACOD_SCRUB	0x00C0	/* 0xC0-0xCF Memory Scrubbing */
-#define MCACOD_SCRUBMSK	0xeff0	/* Skip bit 12 ('F' bit) */
-#define MCACOD_L3WB	0x017A	/* L3 Explicit Writeback */
-#define MCACOD_DATA	0x0134	/* Data Load */
-#define MCACOD_INSTR	0x0150	/* Instruction Fetch */
+/*
+ * Architecturally defined codes from SDM Vol. 3B
+ * "MCA Compound Error Code Encoding for SRAR Errors"
+ */
+#define MCACOD_SCRUB		0x00C0	/* 0xC0-0xCF Memory Scrubbing */
+#define MCACOD_SCRUBMSK		0xeff0	/* Skip bit 12 ('F' bit) */
+#define MCACOD_L3WB		0x017A	/* L3 Explicit Writeback */
+#define MCACOD_DATA		0x0134	/* Data Load */
+#define MCACOD_INSTR		0x0150	/* Instruction Fetch */
+#define MCACOD_EPT_PGWALK_DATA	0x01A4	/* EPT page table walk for data */
+#define MCACOD_EPT_PGWALK_INSTR 0x01A0	/* EPT page table walk for instruction fetch */
 
 /* MCi_MISC register defines */
 #define MCI_MISC_ADDR_LSB(m)	((m) & 0x3f)
@@ -166,6 +171,17 @@
  * treat it like a fault taken in user mode.
  */
 #define MCE_IN_KERNEL_COPYIN	BIT_ULL(7)
+
+/*
+ * Indicates an MCE that happened in guest mode while the hardware page
+ * walker was traversing on the TDP (Two-Dimensional Paging) page table
+ * (Intel's EPT or AMD's NPT). The machine check handler marks the TDP
+ * page table as hardware-poisoned and leaves the rest of the recovery
+ * and cleanup work to KVM, such as preventing KVM accessing the
+ * hardware-poisoned TDP page table and destroying the VM containing the
+ * guest.
+ */
+#define MCE_IN_GUEST_PAGE_WALK_ON_TDP	BIT_ULL(8)
 
 /*
  * Indicates that handler should check and clear Deferred error registers

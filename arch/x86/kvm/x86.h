@@ -829,11 +829,13 @@ static inline void kvm_machine_check(struct kvm_vcpu *vcpu)
 {
 #if defined(CONFIG_X86_MCE)
 	struct pt_regs regs = {
+		.ax = 0, /* do_machine_check() will provide KVM with more details about MCE. */
 		.cs = 3, /* Fake ring 3 no matter what the guest ran on */
 		.flags = X86_EFLAGS_IF,
 	};
 
 	do_machine_check(&regs);
+	vcpu->arch.mce_on_tdp_pgwalk = regs.ax & MCE_IN_GUEST_PAGE_WALK_ON_TDP;
 #endif
 }
 

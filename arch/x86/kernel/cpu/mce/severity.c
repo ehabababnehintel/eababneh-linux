@@ -196,6 +196,23 @@ static struct severity {
 		KERNEL
 		),
 #endif
+	/*
+	 * Upon a #MC, VM exits, and KVM fakes a ring 3
+	 * environment to invoke do_machine_check().
+	 *
+	 * See kvm_machine_check().
+	 */
+	MCESEV(
+		AR, "EPT page table walk error on data load",
+		SER, MASK(MCI_STATUS_OVER|MCI_UC_SAR|MCI_ADDR|MCACOD, MCI_UC_SAR|MCI_ADDR|MCACOD_EPT_PGWALK_DATA),
+		USER
+		),
+	/* Ditto. */
+	MCESEV(
+		AR, "EPT page table walk error on instruction fetch",
+		SER, MASK(MCI_STATUS_OVER|MCI_UC_SAR|MCI_ADDR|MCACOD, MCI_UC_SAR|MCI_ADDR|MCACOD_EPT_PGWALK_INSTR),
+		USER
+		),
 	MCESEV(
 		PANIC, "Action required: unknown MCACOD",
 		SER, MASK(MCI_STATUS_OVER|MCI_UC_SAR, MCI_UC_SAR)
@@ -273,6 +290,22 @@ static bool is_copy_from_user(struct pt_regs *regs)
 }
 
 /*
+ * Indicate whether an MCE that occurred in the guest during
+ * {data,instruction fetch} page walk on the TDP table
+ * (Intel's EPT table or AMD's NPT table).
+ */
+static noinstr bool is_page_walk_on_tdp(struct mce *m)
+{
+	switch (boot_cpu_data.x86_vendor) {
+	case X86_VENDOR_INTEL:
+		return (m->status & MCACOD) == MCACOD_EPT_PGWALK_DATA ||
+		       (m->status & MCACOD) == MCACOD_EPT_PGWALK_INSTR;
+	default:
+		return false;
+	}
+}
+
+/*
  * If mcgstatus indicated that ip/cs on the stack were
  * no good, then "m->cs" will be zero and we will have
  * to assume the worst case (IN_KERNEL) as we actually
@@ -288,8 +321,12 @@ static noinstr int error_context(struct mce *m, struct pt_regs *regs)
 	int fixup_type;
 	bool copy_user;
 
-	if ((m->cs & 3) == 3)
+	if ((m->cs & 3) == 3) {
+		if (is_page_walk_on_tdp(m))
+			m->kflags |= MCE_IN_GUEST_PAGE_WALK_ON_TDP;
+
 		return IN_USER;
+	}
 
 	if (!mc_recoverable(m->mcgstatus))
 		return IN_KERNEL;
