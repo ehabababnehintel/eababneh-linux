@@ -1338,6 +1338,22 @@ struct kvm_arch {
 	struct list_head tdp_mmu_roots;
 
 	/*
+	 * List of struct kvm_mmu_page being used as child page tables in the TDP MMU.
+	 *
+	 * Access to TDP MMU child page tables is achieved by traversing
+	 * the TDP paging structure. If an MCE occurs during hardware page
+	 * walk on a TDP page table, the machine check handler marks the
+	 * page table as hardware-poisoned. Consequently the TDP paging
+	 * iterator avoids stepping down to the hardware-poisoned page and
+	 * all its child page tables to prevent another fatal machine check.
+	 *
+	 * This list provides a mechanism for KVM to free the child page table
+	 * subtree under a hardware-poisoned TDP page table when destroying
+	 * the MCE-affected VM.
+	 */
+	struct list_head tdp_mmu_children;
+
+	/*
 	 * Protects accesses to the following fields when the MMU lock
 	 * is held in read mode:
 	 *  - tdp_mmu_roots (above)
