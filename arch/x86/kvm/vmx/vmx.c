@@ -6712,6 +6712,11 @@ static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 	u32 vectoring_info = vmx->idt_vectoring_info;
 	u16 exit_handler_index;
 
+	if (unlikely(vcpu->arch.mce_on_tdp_pgwalk)) {
+		kvm_vm_dead(vcpu->kvm);
+		return -EIO;
+	}
+
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
 	 * updated. Another good is, in kvm_vm_ioctl_get_dirty_log, before
@@ -7174,7 +7179,7 @@ static void handle_exception_irqoff(struct kvm_vcpu *vcpu, u32 intr_info)
 		handle_nm_fault_irqoff(vcpu);
 	/* Handle machine checks before interrupts are enabled */
 	else if (is_machine_check(intr_info))
-		kvm_machine_check();
+		kvm_machine_check(vcpu);
 }
 
 static void handle_external_interrupt_irqoff(struct kvm_vcpu *vcpu,
@@ -7206,7 +7211,7 @@ void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu)
 		handle_exception_irqoff(vcpu, vmx_get_intr_info(vcpu));
 		break;
 	case EXIT_REASON_MCE_DURING_VMENTRY:
-		kvm_machine_check();
+		kvm_machine_check(vcpu);
 		break;
 	default:
 		break;

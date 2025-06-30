@@ -919,6 +919,12 @@ struct kvm_vcpu_arch {
 	u64 mcg_ext_ctl;
 	u64 *mce_banks;
 	u64 *mci_ctl2_banks;
+	/*
+	 * If set, it indicates an MCE that occurred during a hardware
+	 * {data,instruction fetch} page walk on {EPT,NPT}, and the machine
+	 * check handler has marked the TDP page table as hardware-poisoned.
+	 */
+	bool mce_on_tdp_pgwalk;
 
 	/* Cache MMIO info */
 	u64 mmio_gva;

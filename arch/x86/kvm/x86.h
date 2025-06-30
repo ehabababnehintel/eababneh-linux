@@ -825,7 +825,7 @@ bool kvm_find_async_pf_gfn(struct kvm_vcpu *vcpu, gfn_t gfn);
  * the guest to be always treated like user space, no matter what context
  * it used internally.
  */
-static inline void kvm_machine_check(void)
+static inline void kvm_machine_check(struct kvm_vcpu *vcpu)
 {
 #if defined(CONFIG_X86_MCE)
 	struct pt_regs regs = {

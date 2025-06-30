@@ -2154,7 +2154,7 @@ static void svm_handle_mce(struct kvm_vcpu *vcpu)
 	 * On an #MC intercept the MCE handler is not called automatically in
 	 * the host. So do it by hand here.
 	 */
-	kvm_machine_check();
+	kvm_machine_check(vcpu);
 }
 
 static int mc_interception(struct kvm_vcpu *vcpu)
