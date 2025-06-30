@@ -15,6 +15,7 @@
 void kvm_mmu_init_tdp_mmu(struct kvm *kvm)
 {
 	INIT_LIST_HEAD(&kvm->arch.tdp_mmu_roots);
+	INIT_LIST_HEAD(&kvm->arch.tdp_mmu_children);
 	spin_lock_init(&kvm->arch.tdp_mmu_pages_lock);
 }
 
@@ -59,6 +60,37 @@ static void tdp_mmu_free_sp_rcu_callback(struct rcu_head *head)
 	__tdp_mmu_free_sp(sp);
 }
 
+static void tdp_mmu_free_child_pgtables(struct kvm *kvm)
+{
+	struct kvm_mmu_page *sp, *tmp;
+
+	write_lock(&kvm->mmu_lock);
+
+	list_for_each_entry_safe(sp, tmp, &kvm->arch.tdp_mmu_children, link) {
+		spin_lock(&kvm->arch.tdp_mmu_pages_lock);
+		list_del_rcu(&sp->link);
+		spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
+
+		/*
+		 * If it's a hardware-poisoned page table, only free the page table
+		 * header cache. Do not return the poisoned page table to the buddy
+		 * system to prevent further access.
+		 */
+		if (PageHWPoison(virt_to_page(sp->spt))) {
+			kmem_cache_free(mmu_page_header_cache, sp);
+			continue;
+		}
+
+		/*
+		 * Free a healthy child page table and its header cache located under
+		 * a hardware-poisoned page table.
+		 */
+		call_rcu(&sp->rcu_head, tdp_mmu_free_sp_rcu_callback);
+	}
+
+	write_unlock(&kvm->mmu_lock);
+}
+
 void kvm_mmu_uninit_tdp_mmu(struct kvm *kvm)
 {
 	/*
@@ -69,10 +101,25 @@ void kvm_mmu_uninit_tdp_mmu(struct kvm *kvm)
 	kvm_tdp_mmu_invalidate_roots(kvm, KVM_VALID_ROOTS);
 	kvm_tdp_mmu_zap_invalidated_roots(kvm, false);
 
+	/*
+	 * In the normal case, there isn't any hardware-poisoned TDP page table.
+	 * All the TDP page tables should be freed by traversing the TDP paging
+	 * structure during zapping the roots, and the 'tdp_mmu_children' list
+	 * should be empty.
+	 *
+	 * If there is a hardware-poisoned TDP page, neither the hardware-poisoned
+	 * TDP page nor its child page table subtree should be accessed by the TDP
+	 * paging structure to prevent another fatal machine check. Free them by
+	 * the 'tdp_mmu_children' list.
+	 */
+	if (!list_empty(&kvm->arch.tdp_mmu_children))
+		tdp_mmu_free_child_pgtables(kvm);
+
 #ifdef CONFIG_KVM_PROVE_MMU
 	KVM_MMU_WARN_ON(atomic64_read(&kvm->arch.tdp_mmu_pages));
 #endif
 	WARN_ON(!list_empty(&kvm->arch.tdp_mmu_roots));
+	WARN_ON(!list_empty(&kvm->arch.tdp_mmu_children));
 
 	/*
 	 * Ensure that all the outstanding RCU callbacks to free shadow pages
@@ -356,12 +403,17 @@ static void tdp_mmu_unlink_sp(struct kvm *kvm, struct kvm_mmu_page *sp)
 {
 	tdp_unaccount_mmu_page(kvm, sp);
 
-	if (!sp->nx_huge_page_disallowed)
-		return;
-
 	spin_lock(&kvm->arch.tdp_mmu_pages_lock);
+
+	/* Remove it from the tdp_mmu_children list. */
+	list_del_init(&sp->link);
+
+	if (!sp->nx_huge_page_disallowed)
+		goto out;
+
 	sp->nx_huge_page_disallowed = false;
 	untrack_possible_nx_huge_page(kvm, sp, KVM_TDP_MMU);
+out:
 	spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
 }
 
@@ -1204,6 +1256,10 @@ static int tdp_mmu_link_sp(struct kvm *kvm, struct tdp_iter *iter,
 	} else {
 		tdp_mmu_iter_set_spte(kvm, iter, spte);
 	}
+
+	spin_lock(&kvm->arch.tdp_mmu_pages_lock);
+	list_add_rcu(&sp->link, &kvm->arch.tdp_mmu_children);
+	spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
 
 	tdp_account_mmu_page(kvm, sp);
 
