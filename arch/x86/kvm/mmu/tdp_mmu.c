@@ -30,29 +30,6 @@ static __always_inline bool kvm_lockdep_assert_mmu_lock_held(struct kvm *kvm,
 	return true;
 }
 
-void kvm_mmu_uninit_tdp_mmu(struct kvm *kvm)
-{
-	/*
-	 * Invalidate all roots, which besides the obvious, schedules all roots
-	 * for zapping and thus puts the TDP MMU's reference to each root, i.e.
-	 * ultimately frees all roots.
-	 */
-	kvm_tdp_mmu_invalidate_roots(kvm, KVM_VALID_ROOTS);
-	kvm_tdp_mmu_zap_invalidated_roots(kvm, false);
-
-#ifdef CONFIG_KVM_PROVE_MMU
-	KVM_MMU_WARN_ON(atomic64_read(&kvm->arch.tdp_mmu_pages));
-#endif
-	WARN_ON(!list_empty(&kvm->arch.tdp_mmu_roots));
-
-	/*
-	 * Ensure that all the outstanding RCU callbacks to free shadow pages
-	 * can run before the VM is torn down.  Putting the last reference to
-	 * zapped roots will create new callbacks.
-	 */
-	rcu_barrier();
-}
-
 static void __tdp_mmu_free_sp(struct kvm_mmu_page *sp)
 {
 	free_page((unsigned long)sp->spt);
@@ -80,6 +57,29 @@ static void tdp_mmu_free_sp_rcu_callback(struct rcu_head *head)
 
 	WARN_ON_ONCE(sp->external_spt);
 	__tdp_mmu_free_sp(sp);
+}
+
+void kvm_mmu_uninit_tdp_mmu(struct kvm *kvm)
+{
+	/*
+	 * Invalidate all roots, which besides the obvious, schedules all roots
+	 * for zapping and thus puts the TDP MMU's reference to each root, i.e.
+	 * ultimately frees all roots.
+	 */
+	kvm_tdp_mmu_invalidate_roots(kvm, KVM_VALID_ROOTS);
+	kvm_tdp_mmu_zap_invalidated_roots(kvm, false);
+
+#ifdef CONFIG_KVM_PROVE_MMU
+	KVM_MMU_WARN_ON(atomic64_read(&kvm->arch.tdp_mmu_pages));
+#endif
+	WARN_ON(!list_empty(&kvm->arch.tdp_mmu_roots));
+
+	/*
+	 * Ensure that all the outstanding RCU callbacks to free shadow pages
+	 * can run before the VM is torn down.  Putting the last reference to
+	 * zapped roots will create new callbacks.
+	 */
+	rcu_barrier();
 }
 
 void kvm_tdp_mmu_put_root(struct kvm *kvm, struct kvm_mmu_page *root)
