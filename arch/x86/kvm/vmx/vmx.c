@@ -6673,6 +6673,11 @@ int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 	u32 vectoring_info = vmx->idt_vectoring_info;
 	u16 exit_handler_index;
 
+	if (unlikely(vcpu->arch.mce_on_tdp_pgwalk)) {
+		kvm_vm_dead(vcpu->kvm);
+		return -EIO;
+	}
+
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
 	 * updated. Another good is, in kvm_vm_ioctl_get_dirty_log, before

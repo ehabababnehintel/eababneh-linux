@@ -922,7 +922,7 @@ static void handle_exception_irqoff(struct kvm_vcpu *vcpu, u32 intr_info)
 		handle_nm_fault_irqoff(vcpu);
 	/* Handle machine checks before interrupts are enabled */
 	else if (is_machine_check(intr_info))
-		kvm_machine_check();
+		kvm_machine_check(vcpu);
 }
 
 static void handle_external_interrupt_irqoff(struct kvm_vcpu *vcpu,
@@ -954,7 +954,7 @@ static void vt_handle_exit_irqoff(struct kvm_vcpu *vcpu)
 		handle_exception_irqoff(vcpu, vt_get_intr_info(vcpu));
 		break;
 	case EXIT_REASON_MCE_DURING_VMENTRY:
-		kvm_machine_check();
+		kvm_machine_check(vcpu);
 		break;
 	default:
 		break;
