@@ -189,8 +189,35 @@ static const struct file_operations mmu_rmaps_stat_fops = {
 	.release	= kvm_mmu_rmaps_stat_release,
 };
 
+static int dbgfs_print_sptes(void *data, u64 val)
+{
+	struct kvm *kvm = (struct kvm *)data;
+	gpa_t gpa = (gpa_t)val;
+	struct kvm_vcpu *vcpu;
+
+	if (!gpa) {
+		pr_err("Invalid GPA.\n");
+		return -EINVAL;
+	}
+
+	if (!kvm) {
+		pr_err("No KVM instance.\n");
+		return -ENOENT;
+	}
+
+	vcpu = kvm_get_vcpu(kvm, 0);
+
+	kvm_mmu_print_sptes(vcpu, gpa, "GPA");
+	kvm_flush_remote_tlbs(kvm);
+
+	return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(fops_print_sptes, NULL, dbgfs_print_sptes, "%llu\n");
+
 void kvm_arch_create_vm_debugfs(struct kvm *kvm)
 {
 	debugfs_create_file("mmu_rmaps_stat", 0644, kvm->debugfs_dentry, kvm,
 			    &mmu_rmaps_stat_fops);
+	debugfs_create_file("print_sptes", 0666, kvm->debugfs_dentry, kvm,
+			    &fops_print_sptes);
 }
