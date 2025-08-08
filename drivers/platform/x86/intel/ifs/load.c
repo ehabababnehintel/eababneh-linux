@@ -123,7 +123,6 @@ static void copy_hashes_authenticate_chunks(struct work_struct *work)
 	int i, num_chunks, chunk_size;
 	struct ifs_data *ifsd;
 	u64 linear_addr, base;
-	u32 err_code;
 
 	ifsd = ifs_get_data(dev);
 	msrs = ifs_get_test_msrs(dev);
@@ -131,16 +130,15 @@ static void copy_hashes_authenticate_chunks(struct work_struct *work)
 	wrmsrq(msrs->copy_hashes, ifs_hash_ptr);
 	rdmsrq(msrs->copy_hashes_status, hashes_status.data);
 
-	/* enumerate the scan image information */
-	num_chunks = hashes_status.num_chunks;
-	chunk_size = hashes_status.chunk_size * 1024;
-	err_code = hashes_status.error_code;
-
 	if (!hashes_status.valid) {
 		ifsd->loading_error = true;
-		hashcopy_err_message(dev, err_code);
+		hashcopy_err_message(dev, hashes_status.error_code);
 		goto done;
 	}
+
+	/* enumerate the scan image information */
+	num_chunks = hashes_status.num_chunks;
+	chunk_size = hashes_status.chunk_size * SZ_1K;
 
 	/* base linear address to the scan data */
 	base = ifs_test_image_ptr;
@@ -153,14 +151,13 @@ static void copy_hashes_authenticate_chunks(struct work_struct *work)
 		wrmsrq(msrs->copy_chunks, linear_addr);
 		rdmsrq(msrs->copy_chunks_status, chunk_status.data);
 
-		ifsd->valid_chunks = chunk_status.valid_chunks;
-		err_code = chunk_status.error_code;
-
-		if (err_code) {
+		if (chunk_status.error_code) {
 			ifsd->loading_error = true;
-			auth_err_message(dev, err_code);
+			auth_err_message(dev, chunk_status.error_code);
 			goto done;
 		}
+
+		ifsd->valid_chunks = chunk_status.valid_chunks;
 	}
 done:
 	complete(&ifs_done);
@@ -199,16 +196,15 @@ static int copy_hashes_authenticate_chunks_gen2(struct device *dev)
 		wrmsrq(msrs->copy_hashes, ifs_hash_ptr);
 		rdmsrq(msrs->copy_hashes_status, hashes_status.data);
 
-		/* enumerate the scan image information */
-		chunk_size = hashes_status.chunk_size * SZ_1K;
-		err_code = hashes_status.error_code;
-
-		num_chunks = get_num_chunks(ifsd->generation, hashes_status);
-
 		if (!hashes_status.valid) {
-			hashcopy_err_message(dev, err_code);
+			hashcopy_err_message(dev, hashes_status.error_code);
 			return -EIO;
 		}
+
+		/* enumerate the scan image information */
+		chunk_size = hashes_status.chunk_size * SZ_1K;
+		num_chunks = get_num_chunks(ifsd->generation, hashes_status);
+
 		ifsd->loaded_version = ifs_header_ptr->rev;
 		ifsd->chunk_size = chunk_size;
 	} else {
@@ -344,7 +340,7 @@ static int scan_chunks_sanity_check(struct device *dev)
 			ret = -EIO;
 			goto out;
 		}
-		ifs_pkg_auth[curr_pkg] = 1;
+		ifs_pkg_auth[curr_pkg] = true;
 	}
 	ret = 0;
 	ifsd->loaded_version = ifs_header_ptr->rev;
