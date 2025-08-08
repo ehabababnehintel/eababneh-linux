@@ -32,12 +32,12 @@ ATTRIBUTE_GROUPS(plat_ifs_array);
 bool *ifs_pkg_auth;
 
 static const struct ifs_test_caps scan_test = {
-	.integrity_cap_bit = MSR_INTEGRITY_CAPS_PERIODIC_BIST_BIT,
+	.integrity_cap_bit = MSR_INTEGRITY_CAPS_PERIODIC_SCAN_BIST_BIT,
 	.test_num = IFS_TYPE_SAF,
 };
 
 static const struct ifs_test_caps array_test = {
-	.integrity_cap_bit = MSR_INTEGRITY_CAPS_ARRAY_BIST_BIT,
+	.integrity_cap_bit = MSR_INTEGRITY_CAPS_PERIODIC_ARRAY_BIST_BIT,
 	.test_num = IFS_TYPE_ARRAY_BIST,
 };
 
