@@ -156,26 +156,26 @@
 union ifs_scan_hashes_status {
 	u64	data;
 	struct {
-		u32	chunk_size	:16;
-		u32	num_chunks	:8;
-		u32	rsvd1		:8;
-		u32	error_code	:8;
-		u32	rsvd2		:11;
-		u32	max_core_limit	:12;
-		u32	valid		:1;
+		u64	chunk_size	: 16,
+			num_chunks	:  8,
+			rsvd1		:  8,
+			error_code	:  8,
+			rsvd2		: 11,
+			max_core_limit	: 12,
+			valid		:  1;
 	};
 };
 
 union ifs_scan_hashes_status_gen2 {
 	u64	data;
 	struct {
-		u16	chunk_size;
-		u16	num_chunks;
-		u32	error_code		:8;
-		u32	chunks_in_stride	:9;
-		u32	rsvd			:2;
-		u32	max_core_limit		:12;
-		u32	valid			:1;
+		u64	chunk_size		: 16,
+			num_chunks		: 16,
+			error_code		:  8,
+			chunks_in_stride	:  9,
+			rsvd			:  2,
+			max_core_limit		: 12,
+			valid			:  1;
 	};
 };
 
@@ -183,21 +183,21 @@ union ifs_scan_hashes_status_gen2 {
 union ifs_chunks_auth_status {
 	u64	data;
 	struct {
-		u32	valid_chunks	:8;
-		u32	total_chunks	:8;
-		u32	rsvd1		:16;
-		u32	error_code	:8;
-		u32	rsvd2		:24;
+		u64	valid_chunks	:  8,
+			total_chunks	:  8,
+			rsvd1		: 16,
+			error_code	:  8,
+			rsvd2		: 24;
 	};
 };
 
 union ifs_chunks_auth_status_gen2 {
 	u64	data;
 	struct {
-		u16	valid_chunks;
-		u16	total_chunks;
-		u32	error_code	:8;
-		u32	rsvd2		:24;
+		u64	valid_chunks	: 16,
+			total_chunks	: 16,
+			error_code	:  8,
+			rsvd2		: 24;
 	};
 };
 
@@ -216,8 +216,8 @@ union ifs_scan {
 				u16	stop;
 			} gen2;
 		};
-		u32	delay	:31;
-		u32	sigmce	:1;
+		u32	delay	: 31,
+			sigmce	:  1;
 	};
 };
 
@@ -236,10 +236,10 @@ union ifs_status {
 				u16	chunk_stop_index;
 			} gen2;
 		};
-		u32	error_code		:8;
-		u32	rsvd2			:22;
-		u32	control_error		:1;
-		u32	signature_error		:1;
+		u32	error_code		:  8,
+			rsvd2			: 22,
+			control_error		:  1,
+			signature_error		:  1;
 	};
 };
 
@@ -247,10 +247,10 @@ union ifs_status {
 union ifs_array {
 	u64	data;
 	struct {
-		u32	array_bitmask;
-		u16	array_bank;
-		u16	rsvd			:15;
-		u16	ctrl_result		:1;
+		u64	array_bitmask		: 32,
+			array_bank		: 16,
+			rsvd			: 15,
+			ctrl_result		:  1;
 	};
 };
 
