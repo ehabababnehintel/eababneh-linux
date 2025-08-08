@@ -149,7 +149,7 @@ static atomic_t array_cpus_in;
 static atomic_t scan_cpus_in;
 
 /*
- * Simplified cpu sibling rendezvous loop based on microcode loader __wait_for_cpus()
+ * Simplified CPU sibling rendezvous loop based on microcode loader wait_for_cpus()
  */
 static void wait_for_sibling_cpu(atomic_t *t, long long timeout)
 {
@@ -389,8 +389,8 @@ static void ifs_array_test_gen1(int cpu, struct device *dev)
 }
 
 /*
- * Initiate per core test. It wakes up work queue threads on the target cpu and
- * its sibling cpu. Once all sibling threads wake up, the scan test gets executed and
+ * Initiate per core test. It wakes up work queue threads on the target CPU and
+ * its sibling CPU. Once all sibling threads wake up, the scan test gets executed and
  * wait for all sibling threads to finish the scan test.
  */
 int do_core_test(int cpu, struct device *dev)
@@ -403,7 +403,7 @@ int do_core_test(int cpu, struct device *dev)
 	cpus_read_lock();
 
 	if (!cpu_online(cpu)) {
-		dev_info(dev, "cannot test on the offline cpu %d\n", cpu);
+		dev_info(dev, "cannot test on the offline CPU %d\n", cpu);
 		ret = -EINVAL;
 		goto out;
 	}

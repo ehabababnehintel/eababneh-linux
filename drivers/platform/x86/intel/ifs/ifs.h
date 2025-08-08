@@ -35,10 +35,10 @@
  * IFS Image Loading
  * -----------------
  *
- * The driver loads the tests into memory reserved BIOS local to each CPU
- * socket in a two step process using writes to MSRs to first load the
- * SHA hashes for the test. Then the tests themselves. Status MSRs provide
- * feedback on the success/failure of these steps.
+ * The driver loads the tests into memory reserved by BIOS, local to each CPU
+ * socket in a two-step process. It first writes to MSRs to load the SHA hashes
+ * for the test, followed by the tests themselves. Status MSRs provide feedback
+ * on the success or failure of these steps.
  *
  * The test files are kept in a fixed location: /lib/firmware/intel/ifs_<n>/
  * For e.g if there are 3 test files, they would be named in the following
@@ -83,14 +83,14 @@
  *
  * Test a specific core::
  *
- *   # echo <cpu#> > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
+ *   # echo <CPU#> > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  *
- * when HT is enabled any of the sibling cpu# can be specified to test
+ * when HT is enabled any of the sibling CPU# can be specified to test
  * its corresponding physical core. Since the tests are per physical core,
  * the result of testing any thread is same. All siblings must be online
  * to run a core test. It is only necessary to test one thread.
  *
- * For e.g. to test core corresponding to cpu5
+ * For e.g. to test core corresponding to CPU5
  *
  *   # echo 5 > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  *
@@ -284,7 +284,7 @@ struct ifs_test_msrs {
 };
 
 /**
- * struct ifs_data - attributes related to intel IFS driver
+ * struct ifs_data - attributes related to Intel IFS driver
  * @loaded_version: stores the currently loaded ifs image version.
  * @loaded: If a valid test binary has been loaded into the memory
  * @loading_error: Error occurred on another CPU while loading image

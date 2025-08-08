@@ -108,7 +108,7 @@ static void auth_err_message(struct device *dev, u32 err_code)
 }
 
 /*
- * To copy scan hashes and authenticate test chunks, the initiating cpu must point
+ * To copy scan hashes and authenticate test chunks, the initiating CPU must point
  * to the EDX:EAX to the test image in linear address.
  * Run wrmsr(MSR_COPY_SCAN_HASHES) for scan hash copy and run wrmsr(MSR_AUTHENTICATE_AND_COPY_CHUNK)
  * for scan hash copy and test chunk authentication.

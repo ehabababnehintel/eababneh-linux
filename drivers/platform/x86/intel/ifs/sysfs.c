@@ -10,14 +10,14 @@
 #include "ifs.h"
 
 /*
- * Protects against simultaneous tests on multiple cores, or
- * reloading can file while a test is in progress
+ * Protect against simultaneous tests on multiple cores and prevent
+ * the reloading of IFS image file while a test is in progress.
  */
 static DEFINE_SEMAPHORE(ifs_sem, 1);
 
 /*
- * The sysfs interface to check additional details of last test
- * cat /sys/devices/system/platform/ifs/details
+ * The sysfs interface to check additional details of the last test:
+ * cat /sys/devices/virtual/misc/intel_ifs_<n>/details
  */
 static ssize_t details_show(struct device *dev,
 			    struct device_attribute *attr,
@@ -37,9 +37,8 @@ static const char * const status_msg[] = {
 };
 
 /*
- * The sysfs interface to check the test status:
- * To check the status of last test
- * cat /sys/devices/platform/ifs/status
+ * The sysfs interface to check the last test status:
+ * cat /sys/devices/virtual/misc/intel_ifs_<n>/status
  */
 static ssize_t status_show(struct device *dev,
 			   struct device_attribute *attr,
@@ -53,12 +52,12 @@ static ssize_t status_show(struct device *dev,
 static DEVICE_ATTR_RO(status);
 
 /*
- * The sysfs interface for single core testing
- * To start test, for example, cpu5
- * echo 5 > /sys/devices/platform/ifs/run_test
+ * The sysfs interface for single-core testing.
+ * To start a test, for example on CPU5:
+ * echo 5 > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  * To check the result:
- * cat /sys/devices/platform/ifs/result
- * The sibling core gets tested at the same time.
+ * cat /sys/devices/virtual/misc/intel_ifs_<n>/status
+ * The sibling thread gets tested at the same time.
  */
 static ssize_t run_test_store(struct device *dev,
 			      struct device_attribute *attr,
