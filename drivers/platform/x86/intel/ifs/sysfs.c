@@ -91,7 +91,7 @@ static ssize_t current_batch_store(struct device *dev,
 	int rc;
 
 	rc = kstrtouint(buf, 0, &cur_batch);
-	if (rc < 0 || cur_batch > 0xff)
+	if (rc < 0)
 		return -EINVAL;
 
 	if (down_interruptible(&ifs_sem))
