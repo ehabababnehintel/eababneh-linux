@@ -44,8 +44,8 @@ What:		/sys/devices/virtual/misc/intel_ifs_<N>/current_batch
 Date:		Nov 16 2022
 KernelVersion:	6.2
 Contact:	"Jithu Joseph" <jithu.joseph@intel.com>
-Description:	Write a number less than or equal to 0xff to load an IFS test image.
-		The number written treated as the 2 digit suffix in the following file name:
+Description:	Write a number to load an IFS test image.
+		The number written is treated as at least a 2-digit suffix in the following file name:
 		/lib/firmware/intel/ifs_<N>/ff-mm-ss-02x.scan
 		Reading the file will provide the suffix of the currently loaded IFS test image.
 		This file is present only for device instances where a test image is applicable.
