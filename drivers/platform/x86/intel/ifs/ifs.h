@@ -14,11 +14,11 @@
  * Introduction
  * ------------
  *
- * In Field Scan (IFS) is a hardware feature to run circuit level tests on
- * a CPU core to detect problems that are not caught by parity or ECC checks.
- * Future CPUs will support more than one type of test which will show up
- * with a new platform-device instance-id.
- *
+ * In-Field Scan (IFS) is a hardware feature that runs circuit-level tests on
+ * all CPUs in a group, where all CPUs share the same SCAN test engine to
+ * detect problems that are not caught by parity or ECC checks. Future CPUs
+ * will support more than one type of test, which will show up with a new
+ * platform-device instance-id.
  *
  * IFS Image
  * ---------
@@ -59,19 +59,19 @@
  * Running tests
  * -------------
  *
- * Tests are run by the driver synchronizing execution of all threads on a
- * core and then writing to the ACTIVATE_SCAN MSR on all threads. Instruction
- * execution continues when:
+ * Tests are run by the driver synchronizing execution of all CPUs in a group
+ * that share the same SCAN test engine, then writing to the ACTIVATE_SCAN MSR
+ * on all CPUs. Instruction execution continues when:
  *
  * 1) All tests have completed.
  * 2) Execution was interrupted.
  * 3) A test detected a problem.
  *
- * Note that ALL THREADS ON THE CORE ARE EFFECTIVELY OFFLINE FOR THE
+ * Note that ALL CPUs IN THE GROUP ARE EFFECTIVELY OFFLINE FOR THE
  * DURATION OF THE TEST. This can be up to 200 milliseconds. If the system
- * is running latency sensitive applications that cannot tolerate an
+ * is running latency-sensitive applications that cannot tolerate an
  * interruption of this magnitude, the system administrator must arrange
- * to migrate those applications to other cores before running a core test.
+ * to migrate those applications to other CPUs before running a group test.
  * It may also be necessary to redirect interrupts to other CPUs.
  *
  * In all cases reading the corresponding test's STATUS MSR provides details on what
@@ -81,30 +81,52 @@
  * The IFS driver provides sysfs interfaces via /sys/devices/virtual/misc/intel_ifs_<n>/
  * to control execution:
  *
- * Test a specific core::
+ * Test a specific group::
  *
  *   # echo <CPU#> > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  *
- * when HT is enabled any of the sibling CPU# can be specified to test
- * its corresponding physical core. Since the tests are per physical core,
- * the result of testing any thread is same. All siblings must be online
- * to run a core test. It is only necessary to test one thread.
+ * Any CPU in the same group that shares the same SCAN test engin can be
+ * specified to test its corresponding group. All CPUs in the same group
+ * must be online to run a group test. It is only necessary to test one
+ * CPU in the group.
  *
- * For e.g. to test core corresponding to CPU5
+ * For e.g. to test a group corresponding to CPU5
  *
  *   # echo 5 > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  *
- * Results of the last test is provided in /sys::
+ * The result of the last test for the primary CPU in the group is provided in /sys::
  *
  *   $ cat /sys/devices/virtual/misc/intel_ifs_<n>/status
  *   pass
  *
- * Status can be one of pass, fail, untested
+ * Status can be one of pass, fail, untested.
  *
- * Additional details of the last test is provided by the details file::
+ * Additional details of the last test for the primary CPU in the group are provided in /sys::
  *
  *   $ cat /sys/devices/virtual/misc/intel_ifs_<n>/details
- *   0x8081
+ *   0x7f0080
+ *
+ * For intel_ifs_0, there are following additional sysfs files:
+ *
+ * All CPUs in the same group that ran the test are provided in /sys::
+ *
+ *   $ cat /sys/devices/virtual/misc/intel_ifs_0/cpus_ran_list
+ *   5,149
+ *
+ * The results of the last test for all CPUs in the same group are provided in /sys::
+ *
+ *   $ cat /sys/devices/virtual/misc/intel_ifs_0/status_list
+ *   pass pass
+ *
+ * Additional details of the last test for all CPUs in the same group are provided in /sys::
+ *
+ *   $ cat /sys/devices/virtual/misc/intel_ifs_0/details_list
+ *   0x7f0080 0x7f0080
+ *
+ * More additional details of the last test for all CPUs in the same group are provided in /sys::
+ *
+ *   $ cat /sys/devices/virtual/misc/intel_ifs_0/addnl_details_list
+ *   0xc44191a 0xc44191a
  *
  * The details file reports the hex value of the test specific status MSR.
  * Hardware defined error codes are documented in volume 4 of the Intel
