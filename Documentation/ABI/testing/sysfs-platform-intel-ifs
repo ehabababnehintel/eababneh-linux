@@ -50,3 +50,27 @@ Description:	Write a number to load an IFS test image.
 		Reading the file will provide the suffix of the currently loaded IFS test image.
 		This file is present only for device instances where a test image is applicable.
 Devices:	intel_ifs_0
+
+What:		/sys/devices/virtual/misc/intel_ifs_<N>/cpus_ran_list
+Date:		Mar 3 2025
+Contact:	"Qiuxu Zhuo" <qiuxu.zhuo@intel.com>
+Description:	The CPU list of the last test. These CPUs share the same SCAN test engine.
+Devices:	intel_ifs_0
+
+What:		/sys/devices/virtual/misc/intel_ifs_<N>/status_list
+Date:		Mar 3 2025
+Contact:	"Qiuxu Zhuo" <qiuxu.zhuo@intel.com>
+Description:	The status list of the last test for CPUs sharing the same SCAN test engine.
+Devices:	intel_ifs_0
+
+What:		/sys/devices/virtual/misc/intel_ifs_<N>/details_list
+Date:		Mar 3 2025
+Contact:	"Qiuxu Zhuo" <qiuxu.zhuo@intel.com>
+Description:	The detail status list of the last test for CPUs sharing the same SCAN test engine.
+Devices:	intel_ifs_0
+
+What:		/sys/devices/virtual/misc/intel_ifs_<N>/addnl_details_list
+Date:		Mar 3 2025
+Contact:	"Qiuxu Zhuo" <qiuxu.zhuo@intel.com>
+Description:	The additional detail status list of the last test for CPUs sharing the same SCAN test engine.
+Devices:	intel_ifs_0
