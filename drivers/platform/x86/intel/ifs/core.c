@@ -114,6 +114,8 @@ static bool topology_cluster_matched(u32 msrval)
 		return false;
 	}
 
+	pr_info("matched: APICID step %u, group cpus %u, TID_BIT_SHIFT %u, msrval 0x%x\n", step, cpus, shift, msrval);
+
 	return true;
 }
 
@@ -170,6 +172,8 @@ static int __init ifs_init(void)
 		 */
 		ifs_devices[i].rw_data.all_lp_join = ifs_devices[i].rw_data.generation ?
 						(msrval & MSR_INTEGRITY_CAPS_ALL_LP_JOIN) : true;
+
+		topology_cluster_matched(msrval);
 
 		if (ifs_devices[i].rw_data.all_lp_join && !topology_cluster_matched(msrval)) {
 			pr_err_once("TID_BIT_SHIFT mismatched topology_cluster_cpumask().\n");
