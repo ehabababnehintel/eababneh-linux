@@ -426,6 +426,32 @@ static void build_cpugroup_mask(struct device *dev, int cpu)
 }
 
 /*
+ * Check whether all logical processors that share the scan engine with @cpu
+ * (the TID_BIT_SHIFT APIC-ID range) are online and in the test group. If not,
+ * the test is still attempted; it may pass if the microcode handles the
+ * missing logical processors, e.g. a module with only one core.
+ */
+static bool ifs_group_incomplete(int cpu, struct ifs_data *ifsd)
+{
+	u32 shift = ifsd->tid_bit_shift;
+	u32 engine = cpu_data(cpu).topo.apicid >> shift;
+	int i;
+
+	if (!ifsd->generation || !ifsd->all_lp_join)
+		return false;
+
+	if (cpumask_weight(&ifsd->grp_cpumask) != 1U << shift)
+		return true;
+
+	for_each_cpu(i, &ifsd->grp_cpumask) {
+		if (cpu_data(i).topo.apicid >> shift != engine)
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Initiate per core test. It wakes up work queue threads on the target CPU and
  * its sibling CPU. Once all sibling threads wake up, the scan test gets executed and
  * wait for all sibling threads to finish the scan test.
@@ -464,6 +490,10 @@ int do_core_test(int cpu, struct device *dev)
 	default:
 		ret = -EINVAL;
 	}
+
+	if (!ret && ifsd->status != SCAN_TEST_PASS && ifs_group_incomplete(cpu, ifsd))
+		dev_warn(dev, "CPU %d: test did not pass; not all CPUs sharing the scan engine were found (group %*pbl)\n",
+			 cpu, cpumask_pr_args(&ifsd->grp_cpumask));
 out:
 	cpus_read_unlock();
 	return ret;
