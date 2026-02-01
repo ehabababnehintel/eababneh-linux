@@ -1964,6 +1964,21 @@ static void igen6_debug_setup(void) {}
 static void igen6_debug_teardown(void) {}
 #endif
 
+static void igen6_dump_memss_pma_cr(struct igen6_pvt *pvt, u64 start, int num, const char *cpu)
+{
+	void __iomem *base = pvt->memss_pma_cr;
+	u64 offset;
+	u32 val;
+	int i;
+
+	start &= ~0xf;
+	for (i = 0; i < num; i++) {
+		offset = start + i * 4;
+		val = readl(base + offset);
+		edac_dbg(2, "%s memss_pma_cr reg addr 0x%llx val 0x%x\n", cpu, offset, val);
+	}
+}
+
 static struct igen6_pvt *igen6_pvt_setup(struct pci_dev *pdev)
 {
 	void __iomem *memss_pma_cr;
@@ -1996,6 +2011,10 @@ static struct igen6_pvt *igen6_pvt_setup(struct pci_dev *pdev)
 		return NULL;
 	}
 	pvt->memss_pma_cr = memss_pma_cr;
+
+	igen6_dump_memss_pma_cr(pvt, mtl_ps_cfg.reg_capabilities_misc_offset, 32, "mtl-ps");
+	igen6_dump_memss_pma_cr(pvt, ptl_h_cfg.reg_mem_config_offset, 32, "ptl-h");
+	igen6_dump_memss_pma_cr(pvt, nvl_h_cfg.reg_mem_config_offset, 32, "nvl-h");
 
 	return pvt;
 }
