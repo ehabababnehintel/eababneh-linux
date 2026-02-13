@@ -196,6 +196,14 @@ static struct severity {
 		KERNEL
 		),
 #endif
+	MCESEV(
+		PANIC, "Page table walk error on data load",
+		SER, MASK(MCI_STATUS_OVER|MCI_UC_SAR|MCI_ADDR|MCACOD, MCI_UC_SAR|MCI_ADDR|MCACOD_PGWALK_DATA),
+		),
+	MCESEV(
+		PANIC, "Page table walk error on instruction fetch",
+		SER, MASK(MCI_STATUS_OVER|MCI_UC_SAR|MCI_ADDR|MCACOD, MCI_UC_SAR|MCI_ADDR|MCACOD_PGWALK_INSTR),
+		),
 	/*
 	 * Upon a #MC, VM exits, and KVM fakes a ring 3
 	 * environment to invoke do_machine_check().
