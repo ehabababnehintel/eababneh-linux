@@ -86,6 +86,8 @@
 #define MCACOD_L3WB		0x017A	/* L3 Explicit Writeback */
 #define MCACOD_DATA		0x0134	/* Data Load */
 #define MCACOD_INSTR		0x0150	/* Instruction Fetch */
+#define MCACOD_PGWALK_DATA	0x0194	/* Page table walk for data */
+#define MCACOD_PGWALK_INSTR	0x0190	/* Page table walk for instruction fetch */
 #define MCACOD_EPT_PGWALK_DATA	0x01A4	/* EPT page table walk for data */
 #define MCACOD_EPT_PGWALK_INSTR 0x01A0	/* EPT page table walk for instruction fetch */
 
