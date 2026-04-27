@@ -192,6 +192,12 @@
 #define MCE_CHECK_DFR_REGS	BIT_ULL(8)
 
 /*
+ * The magic value "KVMC" set by KVM to indicate the host machine check
+ * handler that the MCE happened in guest mode.
+ */
+#define MCE_FROM_GUEST		0x4b434548
+
+/*
  * This structure contains all data related to the MCE log.  Also
  * carries a signature to make it easier to find from external
  * debugging tools.  Each entry is only valid when its finished flag
