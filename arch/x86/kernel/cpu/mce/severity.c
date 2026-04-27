@@ -298,6 +298,39 @@ static bool is_copy_from_user(struct pt_regs *regs)
 }
 
 /*
+ * WORKAROUND: DMR A0 stepping incorrectly reports #MC signature on poisoned
+ * EPT page tale. This WA correct the #MC signature of poisoned EPT table
+ * before the silicon/ucode issue is fixed, allowing verification of the KVM
+ * recovery code.
+ */
+static noinstr void fix_mc_sig(struct mce *m, struct pt_regs *regs)
+{
+	u64 status;
+
+	if (boot_cpu_data.x86_vendor != X86_VENDOR_INTEL)
+		return;
+
+	/* Check whether guest #MC. */
+	if (!regs || regs->ax != MCE_FROM_GUEST)
+		return;
+
+	regs->ax = 0;
+	status = m->status;
+
+	if ((m->status & MCACOD) == MCACOD_PGWALK_DATA) {
+		m->status &= ~MCACOD;
+		m->status |= MCACOD_EPT_PGWALK_DATA;
+		pr_info(HW_ERR "WA: Fix #MC signature (status %llx -> %llx) for poisoned EPT page walk (data).\n", status, m->status);
+	} else if ((m->status & MCACOD) == MCACOD_PGWALK_INSTR) {
+		m->status &= ~MCACOD;
+		m->status |= MCACOD_EPT_PGWALK_INSTR;
+		pr_info(HW_ERR "WA: Fix #MC signature (status %llx -> %llx) for poisoned EPT page walk (inst).\n", status, m->status);
+	} else {
+		pr_info(HW_ERR "Guest #MC (status %llx).\n", status);
+	}
+}
+
+/*
  * Indicate whether an MCE that occurred in the guest during
  * {data,instruction fetch} page walk on the TDP table
  * (Intel's EPT table or AMD's NPT table).
@@ -328,6 +361,8 @@ static noinstr int error_context(struct mce *m, struct pt_regs *regs)
 {
 	int fixup_type;
 	bool copy_user;
+
+	fix_mc_sig(m, regs);
 
 	if ((m->cs & 3) == 3) {
 		if (is_page_walk_on_tdp(m))
