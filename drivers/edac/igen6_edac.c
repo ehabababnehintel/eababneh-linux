@@ -160,6 +160,14 @@ struct slice {
 	int id;
 };
 
+/* Per-memory-controller slice hash configuration. */
+struct memory_slice_hash {
+	u64 hash_mask;
+	int intlv_bit;
+	int slice_l_id;
+	u64 slice_s_size;
+};
+
 struct igen6_imc {
 	int mc;
 	struct mem_ctl_info *mci;
@@ -172,7 +180,13 @@ struct igen6_imc {
 	u64 dimm_s_size[NUM_CHANNELS];
 	u64 dimm_l_size[NUM_CHANNELS];
 	int dimm_l_map[NUM_CHANNELS];
+	struct memory_slice_hash msh;
 };
+
+static struct igen6_pvt {
+	void __iomem *memss_pma_cr;
+	struct igen6_imc imc[];
+} *igen6_pvt;
 
 static struct res_config {
 	bool machine_check;
@@ -199,9 +213,17 @@ static struct res_config {
 	u32 reg_mad_intra_width_mask[NUM_DIMMS];
 	u32 reg_mad_intra_density_mask[NUM_DIMMS];
 	u32 imc_base;
-	u32 cmf_base;
-	u32 cmf_size;
-	u32 ms_hash_offset;
+	/* memory_slice_hash registers. */
+	union {
+		/* TGL */
+		struct {
+			u64 cmf_base;
+			u32 cmf_size;
+			u32 cmf_reg_msh_offset;
+			u32 cmf_reg_msh_hash_lsb_mask;
+			u32 cmf_reg_msh_hash_mask_mask;
+		};
+	};
 	u32 ibecc_base;
 	u32 ibecc_error_log_offset;
 	/* Get memory type. */
@@ -218,14 +240,6 @@ static struct res_config {
 	/* Convert error address logged in IBECC to integrated memory controller address */
 	u64 (*err_addr_to_imc_addr)(u64 eaddr, int mc);
 } *res_cfg;
-
-static struct igen6_pvt {
-	void __iomem *memss_pma_cr;
-	u64 ms_hash;
-	u64 ms_s_size;
-	int ms_l_map;
-	struct igen6_imc imc[];
-} *igen6_pvt;
 
 /* The top of low usable DRAM */
 static u32 igen6_tolud;
@@ -628,20 +642,10 @@ static u64 mem_addr_to_sys_addr(u64 maddr)
 
 static u64 tgl_err_addr_to_mem_addr(u64 eaddr, int mc)
 {
-	u64 mask, ms_s_size;
-	int intlv_bit;
-	u32 ms_hash;
+	struct memory_slice_hash *msh = &igen6_pvt->imc[mc].msh;
 
-	ms_s_size = igen6_pvt->ms_s_size;
-	if (eaddr >= ms_s_size)
-		return eaddr + ms_s_size;
-
-	ms_hash = igen6_pvt->ms_hash;
-
-	mask = MEM_SLICE_HASH_MASK(ms_hash);
-	intlv_bit = MEM_SLICE_HASH_LSB_MASK_BIT(ms_hash) + 6;
-
-	return translate_to_upper_level(eaddr, mask, mc, intlv_bit, ms_s_size);
+	return translate_to_upper_level(eaddr, msh->hash_mask, mc,
+					msh->intlv_bit, msh->slice_s_size);
 }
 
 static u64 tgl_err_addr_to_sys_addr(u64 eaddr, int mc)
@@ -663,20 +667,10 @@ static u64 adl_err_addr_to_sys_addr(u64 eaddr, int mc)
 
 static u64 adl_err_addr_to_imc_addr(u64 eaddr, int mc)
 {
-	u64 ms_s_size = igen6_pvt->ms_s_size;
-	struct igen6_imc *imc = &igen6_pvt->imc[mc];
+	struct memory_slice_hash *msh = &igen6_pvt->imc[mc].msh;
 	struct slice slice;
-	int intlv_bit;
-	u32 mc_hash;
 
-	if (eaddr >= 2 * ms_s_size)
-		return eaddr - ms_s_size;
-
-	mc_hash = readl(imc->window + MAD_MC_HASH_OFFSET);
-
-	intlv_bit = MAC_MC_HASH_LSB(mc_hash) + 6;
-
-	translate_to_lower_level(eaddr, 0, 0, intlv_bit, ms_s_size, 0, &slice);
+	translate_to_lower_level(eaddr, 0, 0, msh->intlv_bit, msh->slice_s_size, 0, &slice);
 	return slice.addr;
 }
 
@@ -822,21 +816,23 @@ static struct res_config icl_cfg = {
 };
 
 static struct res_config tgl_cfg = {
-	.machine_check		= true,
-	.num_imc		= 2,
-	.reg_mchbar_mask	= GENMASK_ULL(38, 17),
-	.reg_tom_mask		= GENMASK_ULL(38, 20),
-	.reg_touud_mask		= GENMASK_ULL(38, 20),
-	.reg_eccerrlog_addr_mask = GENMASK_ULL(38, 5),
-	.imc_base		= 0x5000,
-	.cmf_base		= 0x11000,
-	.cmf_size		= 0x800,
-	.ms_hash_offset		= 0xac,
-	.ibecc_base		= 0xd400,
-	.ibecc_error_log_offset	= 0x170,
-	.ibecc_available	= tgl_ibecc_available,
-	.err_addr_to_sys_addr	= tgl_err_addr_to_sys_addr,
-	.err_addr_to_imc_addr	= tgl_err_addr_to_imc_addr,
+	.machine_check			= true,
+	.num_imc			= 2,
+	.reg_mchbar_mask		= GENMASK_ULL(38, 17),
+	.reg_tom_mask			= GENMASK_ULL(38, 20),
+	.reg_touud_mask			= GENMASK_ULL(38, 20),
+	.reg_eccerrlog_addr_mask	= GENMASK_ULL(38, 5),
+	.imc_base			= 0x5000,
+	.cmf_base			= 0x11000,
+	.cmf_size			= 0x800,
+	.cmf_reg_msh_offset		= 0xac,
+	.cmf_reg_msh_hash_lsb_mask	= GENMASK(26, 24),
+	.cmf_reg_msh_hash_mask_mask	= GENMASK(19, 6),
+	.ibecc_base			= 0xd400,
+	.ibecc_error_log_offset		= 0x170,
+	.ibecc_available		= tgl_ibecc_available,
+	.err_addr_to_sys_addr		= tgl_err_addr_to_sys_addr,
+	.err_addr_to_imc_addr		= tgl_err_addr_to_imc_addr,
 };
 
 /* Shared by Alder Lake, Alder Lake-N, Arizona Beach, Amston Lake, and Raptor Lake-P */
@@ -1803,44 +1799,57 @@ err_unregister:
 static int igen6_mem_slice_setup(u64 mchbar)
 {
 	struct igen6_imc *imc = &igen6_pvt->imc[0];
-	u64 base = mchbar + res_cfg->cmf_base;
-	u32 offset = res_cfg->ms_hash_offset;
-	u32 size = res_cfg->cmf_size;
-	u64 ms_s_size, ms_hash;
-	void __iomem *cmf;
-	int ms_l_map;
+	struct memory_slice_hash *msh;
+	void __iomem *window;
+	int slice_l_id, i;
+	u64 slice_s_size;
+	u32 val;
 
 	edac_dbg(2, "\n");
 
-	if (imc[0].size < imc[1].size) {
-		ms_s_size = imc[0].size;
-		ms_l_map  = 1;
-	} else {
-		ms_s_size = imc[1].size;
-		ms_l_map  = 0;
-	}
-
-	igen6_pvt->ms_s_size = ms_s_size;
-	igen6_pvt->ms_l_map  = ms_l_map;
-
-	edac_dbg(0, "ms_s_size: %llu MiB, ms_l_map %d\n",
-		 ms_s_size >> 20, ms_l_map);
-
-	if (!size)
-		return 0;
-
-	cmf = ioremap(base, size);
-	if (!cmf) {
-		igen6_printk(KERN_ERR, "Failed to ioremap cmf 0x%llx\n", base);
+	if (res_cfg->num_imc != 2) {
+		igen6_printk(KERN_ERR, "Default memory slice hash setup doesn't support %d MCs.\n", res_cfg->num_imc);
 		return -ENODEV;
 	}
 
-	ms_hash = readq(cmf + offset);
-	igen6_pvt->ms_hash = ms_hash;
+	if (res_cfg->cmf_size) {
+		window = ioremap(mchbar + res_cfg->cmf_base, res_cfg->cmf_size);
+		if (!window) {
+			igen6_printk(KERN_ERR, "Failed to ioremap cmf 0x%llx\n", mchbar + res_cfg->cmf_base);
+			return -ENODEV;
+		}
 
-	edac_dbg(0, "MEM_SLICE_HASH: 0x%llx\n", ms_hash);
+		val = readl(window + res_cfg->cmf_reg_msh_offset);
+		edac_dbg(0, "mem_slice_hash reg 0x%x\n", val);
+		iounmap(window);
+	}
 
-	iounmap(cmf);
+	if (imc[0].size < imc[1].size) {
+		slice_s_size = imc[0].size;
+		slice_l_id  = 1;
+	} else {
+		slice_s_size = imc[1].size;
+		slice_l_id  = 0;
+	}
+	edac_dbg(0, "slice_s_size: %llu MiB, slice_l_id %d\n",
+		 slice_s_size >> 20, slice_l_id);
+
+	for (i = 0; i < res_cfg->num_imc; i++) {
+		msh = &imc[i].msh;
+		if (res_cfg->cmf_size) {
+			/* TGL (interleave bit is removed from error address) */
+			msh->intlv_bit = field_get(res_cfg->cmf_reg_msh_hash_lsb_mask, val) + 6;
+			msh->hash_mask = res_cfg->cmf_reg_msh_hash_mask_mask & val;
+		} else {
+			/* Other SoCs with two MCs (interleave bit remains in error address) */
+			val = readl(imc[i].window + MAD_MC_HASH_OFFSET);
+			msh->intlv_bit = MAC_MC_HASH_LSB(val) + 6;
+			edac_dbg(0, "mc%d mad_mc_hash reg 0x%x\n", i, val);
+		}
+
+		msh->slice_s_size = slice_s_size;
+		msh->slice_l_id  = slice_l_id;
+	}
 
 	return 0;
 }
