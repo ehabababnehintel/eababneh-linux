@@ -46,6 +46,7 @@
 #define MAX_IMC_TO_PROBE		8
 #define NUM_CHANNELS			2 /* Max channels */
 #define NUM_DIMMS			2 /* Max DIMMs per channel */
+#define NUM_LEVELS			order_base_2(MAX_IMC_TO_PROBE) /* Maximum MEMORY_SLICE_HASH hierarchy depth. */
 
 #define _4GB				BIT_ULL(32)
 
@@ -189,7 +190,7 @@ struct igen6_imc {
 	u64 dimm_s_size[NUM_CHANNELS];
 	u64 dimm_l_size[NUM_CHANNELS];
 	int dimm_l_map[NUM_CHANNELS];
-	struct memory_slice_hash msh;
+	struct memory_slice_hash msh[NUM_LEVELS];
 };
 
 static struct igen6_pvt {
@@ -717,7 +718,7 @@ static u64 mem_addr_to_sys_addr(u64 maddr)
 
 static u64 tgl_err_addr_to_mem_addr(u64 eaddr, int mc)
 {
-	struct memory_slice_hash *msh = &igen6_pvt->imc[mc].msh;
+	struct memory_slice_hash *msh = igen6_pvt->imc[mc].msh;
 
 	return translate_to_upper_level(eaddr, msh->hash_mask, mc,
 					msh->intlv_bit, msh->slice_s_size);
@@ -742,7 +743,7 @@ static u64 adl_err_addr_to_sys_addr(u64 eaddr, int mc)
 
 static u64 adl_err_addr_to_imc_addr(u64 eaddr, int mc)
 {
-	struct memory_slice_hash *msh = &igen6_pvt->imc[mc].msh;
+	struct memory_slice_hash *msh = igen6_pvt->imc[mc].msh;
 	struct slice slice;
 
 	translate_to_lower_level(eaddr, 0, 0, msh->intlv_bit, msh->slice_s_size, 0, &slice);
@@ -1912,7 +1913,7 @@ static int igen6_mem_slice_setup(u64 mchbar)
 		 slice_s_size >> 20, slice_l_id);
 
 	for (i = 0; i < res_cfg->num_imc; i++) {
-		msh = &imc[i].msh;
+		msh = imc[i].msh;
 		if (res_cfg->cmf_size) {
 			/* TGL (interleave bit is removed from error address) */
 			msh->intlv_bit = field_get(res_cfg->cmf_reg_msh_hash_lsb_mask, val) + 6;
