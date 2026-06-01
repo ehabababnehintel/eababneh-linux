@@ -163,6 +163,7 @@ struct slice {
 
 /* Per-memory-controller slice hash configuration. */
 struct memory_slice_hash {
+	bool hash_enabled;
 	u64 hash_mask;
 	int intlv_bit;
 	int slice_l_id;
@@ -524,29 +525,70 @@ static void translate_to_lower_level(u64 addr, u64 hash_mask, u64 hash_base,
 	slice->id = compute_hash(addr, hash_mask, hash_base, intlv_bit);
 }
 
-/* Reconstruct address for upper memory hierarchy level. */
-static u64 translate_to_upper_level(u64 addr, u64 hash_mask, u64 hash_base,
-				    int intlv_bit, u64 s_size)
+/*
+ * Translate a memory slice address to a memory physical address in a
+ * multi-level MEMORY_SLICE_HASH hierarchy.
+ *
+ * Since hash_mask operates on the final memory physical address,
+ * restore the removed interleave-bit positions first, then
+ * reconstruct the interleave bits for each active level.
+ *
+ * Process MEMORY_SLICE_HASH levels from bottom to top
+ * (level 0 to level @n_levels - 1).
+ */
+static u64 translate_to_mem_addr(u64 addr, struct memory_slice_hash msh[],
+				 bool *msh_level_map, int n_levels, int pmc)
 {
-	u64 inflated_addr, hash_val;
+	bool intlv_in_level[NUM_LEVELS] = {false};
+	u64 inflated_addr = addr, hash_val;
+	int i, slice_id;
 
-	/* In non-interleave zone. */
-	if (addr >= s_size)
-		return addr + s_size;
+	for (i = 0; i < n_levels; i++) {
+		/* This level doesn't exist. */
+		if (!msh_level_map[i])
+			continue;
 
-	/*
-	 * In interleave zone.
-	 *
-	 * Insert a zero at @intlv_bit position.
-	 */
-	inflated_addr = inflate_addr(addr, intlv_bit);
+		/* In non-interleaved zone (only one slice is populated) */
+		if (!msh[i].hash_enabled)
+			continue;
 
-	/*
-	 * Reconstruct the removed interleave bit and use it to replace
-	 * the zero at @intlv_bit position.
-	 */
-	hash_val = compute_hash(inflated_addr, hash_mask, hash_base, intlv_bit);
-	return inflated_addr | (hash_val << intlv_bit);
+		/* In non-interleaved zone (in Zone1) */
+		if (inflated_addr >= msh[i].slice_s_size) {
+			inflated_addr += msh[i].slice_s_size;
+			continue;
+		}
+
+		/*
+		 * In interleaved zone.
+		 *
+		 * Inflating the address by inserting a zero at @intlv_bit position.
+		 */
+		intlv_in_level[i] = true;
+		inflated_addr = inflate_addr(inflated_addr, msh[i].intlv_bit);
+	}
+
+	/* Add back each level's hash bit. */
+	for (i = 0; i < n_levels; i++) {
+		if (!intlv_in_level[i])
+			continue;
+
+		/*
+		 * Slice ID of this level. Each MEMORY_SLICE_HASH level
+		 * selects between two child slices. The 'pmc' bit
+		 * corresponding to the hierarchy level identifies which
+		 * slice contains the address.
+		 */
+		slice_id = (pmc >> i) & 1;
+
+		/*
+		 * Reconstruct the removed interleave bit and use it to replace
+		 * the zero at @intlv_bit position.
+		 */
+		hash_val = compute_hash(inflated_addr, msh[i].hash_mask, slice_id, msh[i].intlv_bit);
+		inflated_addr |= (hash_val << msh[i].intlv_bit);
+	}
+
+	return inflated_addr;
 }
 
 static int get_mchbar(struct pci_dev *pdev, u64 *mchbar)
@@ -718,10 +760,11 @@ static u64 mem_addr_to_sys_addr(u64 maddr)
 
 static u64 tgl_err_addr_to_mem_addr(u64 eaddr, int mc)
 {
-	struct memory_slice_hash *msh = igen6_pvt->imc[mc].msh;
+	struct igen6_pvt *pvt = igen6_pvt;
+	struct igen6_imc *imc = &pvt->imc[mc];
 
-	return translate_to_upper_level(eaddr, msh->hash_mask, mc,
-					msh->intlv_bit, msh->slice_s_size);
+	return translate_to_mem_addr(eaddr, imc->msh, pvt->msh_level_map,
+				     pvt->n_msh_levels, imc->pmc);
 }
 
 static u64 tgl_err_addr_to_sys_addr(u64 eaddr, int mc)
@@ -1927,6 +1970,8 @@ static int igen6_mem_slice_setup(u64 mchbar)
 
 		msh->slice_s_size = slice_s_size;
 		msh->slice_l_id  = slice_l_id;
+		/* Legacy 2-MC platforms use slice_s_size != 0 to indicate hashing. */
+		msh->hash_enabled = !!slice_s_size;
 	}
 
 	return 0;
