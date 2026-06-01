@@ -169,7 +169,16 @@ struct memory_slice_hash {
 };
 
 struct igen6_imc {
+	/*
+	 * Logical index assigned by the EDAC driver to each detected
+	 * and registered memory controller.
+	 */
 	int mc;
+	/*
+	 * Physical memory controller index used for probing.
+	 * Some indices may correspond to absent or BIOS-disabled controllers.
+	 */
+	int pmc;
 	struct mem_ctl_info *mci;
 	struct pci_dev *pdev;
 	struct device dev;
@@ -185,6 +194,8 @@ struct igen6_imc {
 
 static struct igen6_pvt {
 	void __iomem *memss_pma_cr;
+	bool *msh_level_map;
+	int n_msh_levels;
 	struct igen6_imc imc[];
 } *igen6_pvt;
 
@@ -376,6 +387,70 @@ static struct work_struct ecclog_work;
 #define DID_NVL_H_SKU2	0xd702
 #define DID_NVL_H_SKU3	0xd704
 #define DID_NVL_H_SKU4	0xd705
+
+/*
+ * Build the active MEMORY_SLICE_HASH hierarchy from the
+ * detected physical MC topology.
+ *
+ * @n_pmcs must be a power of two.
+ */
+static bool build_mem_slice_levels(bool pmc[], int n_pmcs, bool levels[], int n_levels)
+{
+	bool left, right;
+
+	if (n_pmcs == 2) {
+		left = pmc[0];
+		right = pmc[1];
+
+		if (left && right)
+			levels[n_levels - 1] = true;
+
+		return left || right;
+	}
+
+	left  = build_mem_slice_levels(pmc, n_pmcs / 2, levels, n_levels - 1);
+	right = build_mem_slice_levels(&pmc[n_pmcs / 2], n_pmcs / 2, levels, n_levels - 1);
+	if (left && right)
+		levels[n_levels - 1] = true;
+
+	return left || right;
+}
+
+static int determine_mem_slice_levels(struct igen6_pvt *pvt, struct res_config *cfg)
+{
+	/* IMCs are registered in ascending physical MC order. */
+	int last_pmc = pvt->imc[cfg->num_imc - 1].pmc, max_pmcs;
+	int i, max_levels, n_levels = 0;
+	bool *level_map, *pmc_map;
+
+	max_pmcs = roundup_pow_of_two(last_pmc + 1);
+	pmc_map = kzalloc_objs(*pmc_map, max_pmcs);
+	if (!pmc_map)
+		return -ENOMEM;
+
+	max_levels = ilog2(max_pmcs);
+	level_map = kzalloc_objs(*level_map, max_levels);
+	if (!level_map) {
+		kfree(pmc_map);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < cfg->num_imc; i++)
+		pmc_map[pvt->imc[i].pmc] = true;
+
+	build_mem_slice_levels(pmc_map, max_pmcs, level_map, max_levels);
+	kfree(pmc_map);
+
+	for (i = 0; i < max_levels; i++) {
+		if (level_map[i])
+			n_levels = i + 1;
+	}
+
+	pvt->msh_level_map = level_map;
+	pvt->n_msh_levels = n_levels;
+
+	return 0;
+}
 
 /* Remove the interleave bit and shift upper part down to fill gap. */
 static u64 squeeze_addr(u64 addr, int intlv_bit)
@@ -1580,6 +1655,7 @@ static struct igen6_pvt *igen6_pvt_setup(struct pci_dev *pdev)
 static void igen6_pvt_release(struct igen6_pvt *pvt)
 {
 	iounmap(pvt->memss_pma_cr);
+	kfree(pvt->msh_level_map);
 	kfree(pvt);
 }
 
@@ -1655,7 +1731,7 @@ static void imc_release(struct device *dev)
 	/* Nothing to do, the 'imc' owns the 'dev' and will also release it. */
 }
 
-static int igen6_register_mci(int mc, void __iomem *window, struct pci_dev *pdev)
+static int igen6_register_mci(int mc, int pmc, void __iomem *window, struct pci_dev *pdev)
 {
 	struct edac_mc_layer layers[2];
 	struct mem_ctl_info *mci;
@@ -1707,6 +1783,7 @@ static int igen6_register_mci(int mc, void __iomem *window, struct pci_dev *pdev
 	 */
 	mci->pdev = mc ? &imc->dev : &pdev->dev;
 	imc->mc	= mc;
+	imc->pmc = pmc;
 	imc->pdev = pdev;
 	imc->window = window;
 
@@ -1767,7 +1844,7 @@ static int igen6_register_mcis(struct pci_dev *pdev, u64 mchbar)
 		if (!window)
 			continue;
 
-		rc = igen6_register_mci(lmc, window, pdev);
+		rc = igen6_register_mci(lmc, pmc, window, pdev);
 		if (rc)
 			goto err_unregister;
 
@@ -1926,6 +2003,10 @@ static int igen6_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto fail;
 
 	if (res_cfg->num_imc > 1) {
+		rc = determine_mem_slice_levels(igen6_pvt, res_cfg);
+		if (rc)
+			goto fail2;
+
 		rc = igen6_mem_slice_setup(mchbar);
 		if (rc)
 			goto fail2;
