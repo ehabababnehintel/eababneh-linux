@@ -247,6 +247,8 @@ static struct res_config {
 	void (*set_chan_params)(struct igen6_imc *imc);
 	/* Set imc->dimm_{l_size,s_size,l_map}[chan]. */
 	void (*set_dimm_params)(struct igen6_imc *imc, int chan);
+	/* Set imc->msh[]. */
+	int (*set_memory_slice_hash)(struct igen6_pvt *pvt, u64 mchbar);
 	bool (*ibecc_available)(struct pci_dev *pdev);
 	/* Convert error address logged in IBECC to system physical address */
 	u64 (*err_addr_to_sys_addr)(u64 eaddr, int mc);
@@ -1927,6 +1929,9 @@ static int igen6_mem_slice_setup(u64 mchbar)
 	u32 val;
 
 	edac_dbg(2, "\n");
+
+	if (res_cfg->set_memory_slice_hash)
+		return res_cfg->set_memory_slice_hash(igen6_pvt, mchbar);
 
 	if (res_cfg->num_imc != 2) {
 		igen6_printk(KERN_ERR, "Default memory slice hash setup doesn't support %d MCs.\n", res_cfg->num_imc);
