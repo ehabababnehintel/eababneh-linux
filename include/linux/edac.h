@@ -62,7 +62,9 @@ static inline void opstate_init(void)
  * @DEV_X1:		1 bit for data
  * @DEV_X2:		2 bits for data
  * @DEV_X4:		4 bits for data
+ * @DEV_X6:		6 bits for data
  * @DEV_X8:		8 bits for data
+ * @DEV_X12:		12 bits for data
  * @DEV_X16:		16 bits for data
  * @DEV_X32:		32 bits for data
  * @DEV_X64:		64 bits for data
@@ -74,7 +76,9 @@ enum dev_type {
 	DEV_X1,
 	DEV_X2,
 	DEV_X4,
+	DEV_X6,
 	DEV_X8,
+	DEV_X12,
 	DEV_X16,
 	DEV_X32,		/* Do these parts exist? */
 	DEV_X64			/* Do these parts exist? */
@@ -84,7 +88,9 @@ enum dev_type {
 #define DEV_FLAG_X1		BIT(DEV_X1)
 #define DEV_FLAG_X2		BIT(DEV_X2)
 #define DEV_FLAG_X4		BIT(DEV_X4)
+#define DEV_FLAG_X6		BIT(DEV_X6)
 #define DEV_FLAG_X8		BIT(DEV_X8)
+#define DEV_FLAG_X12		BIT(DEV_X12)
 #define DEV_FLAG_X16		BIT(DEV_X16)
 #define DEV_FLAG_X32		BIT(DEV_X32)
 #define DEV_FLAG_X64		BIT(DEV_X64)
@@ -185,6 +191,7 @@ static inline char *mc_event_error_type(const unsigned int err_type)
  * @MEM_RDDR5:		Registered DDR5 RAM
  * @MEM_LRDDR5:		Load-Reduced DDR5 memory.
  * @MEM_LPDDR5:		Low-Power DDR5 memory.
+ * @MEM_LPDDR6:		Low-Power DDR6 memory.
  * @MEM_NVDIMM:		Non-volatile RAM
  * @MEM_WIO2:		Wide I/O 2.
  * @MEM_HBM2:		High bandwidth Memory Gen 2.
@@ -218,6 +225,7 @@ enum mem_type {
 	MEM_RDDR5,
 	MEM_LRDDR5,
 	MEM_LPDDR5,
+	MEM_LPDDR6,
 	MEM_NVDIMM,
 	MEM_WIO2,
 	MEM_HBM2,
@@ -250,6 +258,7 @@ enum mem_type {
 #define MEM_FLAG_RDDR5		BIT(MEM_RDDR5)
 #define MEM_FLAG_LRDDR5		BIT(MEM_LRDDR5)
 #define MEM_FLAG_LPDDR5		BIT(MEM_LPDDR5)
+#define MEM_FLAG_LPDDR6		BIT(MEM_LPDDR6)
 #define MEM_FLAG_NVDIMM		BIT(MEM_NVDIMM)
 #define MEM_FLAG_WIO2		BIT(MEM_WIO2)
 #define MEM_FLAG_HBM2		BIT(MEM_HBM2)

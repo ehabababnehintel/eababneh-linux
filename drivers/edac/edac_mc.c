@@ -163,6 +163,7 @@ const char * const edac_mem_types[] = {
 	[MEM_DDR5]	= "Unbuffered-DDR5",
 	[MEM_RDDR5]	= "Registered-DDR5",
 	[MEM_LRDDR5]	= "Load-Reduced-DDR5-RAM",
+	[MEM_LPDDR6]	= "Low-Power-DDR6-RAM",
 	[MEM_NVDIMM]	= "Non-volatile-RAM",
 	[MEM_WIO2]	= "Wide-IO-2",
 	[MEM_HBM2]	= "High-bandwidth-memory-Gen2",
