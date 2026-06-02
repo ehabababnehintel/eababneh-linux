@@ -236,6 +236,19 @@ static struct res_config {
 			u32 cmf_reg_msh_hash_lsb_mask;
 			u32 cmf_reg_msh_hash_mask_mask;
 		};
+
+		/* TTL */
+		struct {
+			u64 hbo_base;
+			u32 hbo_size;
+			u32 hbo_reg_msh_offset;
+			u32 hbo_reg_msh_hash_enabled_mask;
+			u32 hbo_reg_msh_hash_lsb_mask;
+			u32 hbo_reg_msh_hash_mask_mask;
+			u32 hbo_reg_msh_intlv_cap_mask;
+			u64 hbo_reg_msh_intlv_cap_granularity;
+			u32 hbo_reg_msh_non_intlv_select_mask;
+		};
 	};
 	u32 ibecc_base;
 	u32 ibecc_error_log_offset;
@@ -391,6 +404,9 @@ static struct work_struct ecclog_work;
 #define DID_NVL_H_SKU2	0xd702
 #define DID_NVL_H_SKU3	0xd704
 #define DID_NVL_H_SKU4	0xd705
+
+/* Titan Lake */
+#define DID_TTL_SKU1	0xffff
 
 /*
  * Build the active MEMORY_SLICE_HASH hierarchy from the
@@ -839,15 +855,9 @@ static u64 ptl_h_get_chan_size(struct igen6_imc *imc, int chan)
 	       res_cfg->reg_mad_inter_size_granularity;
 }
 
-static u64 ptl_h_get_dimm_size(struct igen6_imc *imc, int chan, int dimm)
+/* @density: DRAM device density in Gb */
+static u64 generic_get_dimm_size(enum mem_type mtype, enum dev_type dtype, u64 density, u32 ranks)
 {
-	u32 val = readl(imc->window + MAD_INTRA_CH0_OFFSET + chan * 4);
-	u32 ranks = 1 << field_get(res_cfg->reg_mad_intra_rank_mask[dimm], val);
-	/* DRAM device density in Gb */
-	u64 density = field_get(res_cfg->reg_mad_intra_density_mask[dimm], val) * 4;
-
-	enum mem_type mtype = ptl_h_get_mem_type(imc);
-	enum dev_type dtype = ptl_h_get_dev_type(imc, chan, dimm);
 	u64 sub_ch_width, dev_num;
 
 	switch (mtype) {
@@ -858,13 +868,22 @@ static u64 ptl_h_get_dimm_size(struct igen6_imc *imc, int chan, int dimm)
 	case MEM_LPDDR4:
 		sub_ch_width = 16;
 		break;
+	case MEM_LPDDR6:
+		sub_ch_width = 12;
+		break;
 	default:
 		sub_ch_width = 0;
 	}
 
 	switch (dtype) {
+	case DEV_X6:
+		dev_num = sub_ch_width / 6;
+		break;
 	case DEV_X8:
 		dev_num = sub_ch_width / 8;
+		break;
+	case DEV_X12:
+		dev_num = sub_ch_width / 12;
 		break;
 	case DEV_X16:
 		dev_num = sub_ch_width / 16;
@@ -873,9 +892,24 @@ static u64 ptl_h_get_dimm_size(struct igen6_imc *imc, int chan, int dimm)
 		dev_num = 0;
 	}
 
-	edac_dbg(2, "ranks %d, density %lluGb, sub_ch_width %llu, dev_num %llu (reg 0x%x)\n", ranks, density, sub_ch_width, dev_num, val);
+	edac_dbg(2, "ranks %d, density %lluGb, sub_ch_width %llu, dev_num %llu\n", ranks, density, sub_ch_width, dev_num);
 
 	return ((dev_num * density / 8) * ranks) << 30;
+}
+
+static u64 ptl_h_get_dimm_size(struct igen6_imc *imc, int chan, int dimm)
+{
+	u32 val = readl(imc->window + MAD_INTRA_CH0_OFFSET + chan * 4);
+	u32 ranks = 1 << field_get(res_cfg->reg_mad_intra_rank_mask[dimm], val);
+	/* DRAM device density in Gb */
+	u64 density = field_get(res_cfg->reg_mad_intra_density_mask[dimm], val) * 4;
+
+	enum mem_type mtype = ptl_h_get_mem_type(imc);
+	enum dev_type dtype = ptl_h_get_dev_type(imc, chan, dimm);
+
+	edac_dbg(2, "dimm size (reg 0x%x)\n", val);
+
+	return generic_get_dimm_size(mtype, dtype, density, ranks);
 }
 
 static void ptl_h_set_chan_params(struct igen6_imc *imc)
@@ -907,6 +941,131 @@ static void ptl_h_set_dimm_params(struct igen6_imc *imc, int chan)
 		imc->dimm_l_map[chan]  = 0;
 	}
 }
+
+static enum mem_type ttl_get_mem_type(struct igen6_imc *imc)
+{
+	u32 mtype, val;
+
+	val = readl(igen6_pvt->memss_pma_cr + res_cfg->reg_mem_config_offset);
+	mtype = field_get(res_cfg->reg_mem_config_ddr_type_mask, val);
+
+	edac_dbg(2, "mtype %u (reg 0x%x)\n", mtype, val);
+
+	switch (mtype) {
+	case 0:
+		return MEM_LPDDR5;
+	case 1:
+		return MEM_DDR5;
+	case 2:
+		return MEM_LPDDR6;
+	default:
+		return MEM_UNKNOWN;
+	}
+}
+
+static enum dev_type ttl_get_dev_type(struct igen6_imc *imc, int chan, int dimm)
+{
+	u32 width, val;
+	enum mem_type mtype;
+
+	val = readl(imc->window + MAD_INTRA_CH0_OFFSET + chan * 4);
+	width = field_get(res_cfg->reg_mad_intra_width_mask[dimm], val);
+
+	mtype = ttl_get_mem_type(imc);
+
+	switch (width) {
+	case 0:
+		if (mtype == MEM_DDR5 || mtype == MEM_LPDDR5)
+			return DEV_X16;
+		else if (mtype == MEM_LPDDR6)
+			return DEV_X12;
+
+		return DEV_UNKNOWN;
+	case 1:
+		if (mtype == MEM_DDR5 || mtype == MEM_LPDDR5)
+			return DEV_X8;
+		else if (mtype == MEM_LPDDR6)
+			return DEV_X6;
+
+		return DEV_UNKNOWN;
+
+	default:
+		return DEV_UNKNOWN;
+	}
+}
+
+static u64 ttl_get_dimm_size(struct igen6_imc *imc, int chan, int dimm)
+{
+	u32 val = readl(imc->window + MAD_INTRA_CH0_OFFSET + chan * 4);
+	u32 ranks = 1 << field_get(res_cfg->reg_mad_intra_rank_mask[dimm], val);
+	/* DRAM device density in Gb */
+	u64 density = field_get(res_cfg->reg_mad_intra_density_mask[dimm], val) * 4;
+
+	enum mem_type mtype = ttl_get_mem_type(imc);
+	enum dev_type dtype = ttl_get_dev_type(imc, chan, dimm);
+
+	edac_dbg(2, "dimm size (reg 0x%x)\n", val);
+
+	return generic_get_dimm_size(mtype, dtype, density, ranks);
+}
+
+static void ttl_set_dimm_params(struct igen6_imc *imc, int chan)
+{
+	u64 dimm0_size = ttl_get_dimm_size(imc, chan, 0);
+	u64 dimm1_size = ttl_get_dimm_size(imc, chan, 1);
+
+	if (dimm0_size <= dimm1_size) {
+		imc->dimm_s_size[chan] = dimm0_size;
+		imc->dimm_l_size[chan] = dimm1_size;
+		imc->dimm_l_map[chan]  = 1;
+	} else {
+		imc->dimm_s_size[chan] = dimm1_size;
+		imc->dimm_l_size[chan] = dimm0_size;
+		imc->dimm_l_map[chan]  = 0;
+	}
+}
+
+static int ttl_set_memory_slice_hash(struct igen6_pvt *pvt, u64 mchbar)
+{
+	struct igen6_imc *imc = pvt->imc;
+	struct memory_slice_hash *msh;
+	void __iomem *window;
+	int i, j, pmc;
+	u64 base;
+	u32 val;
+
+	for (i = 0; i < res_cfg->num_imc; i++) {
+		pmc = imc[i].pmc;
+		base = res_cfg->hbo_base + res_cfg->hbo_size * pmc;
+		window = ioremap(mchbar + base, res_cfg->hbo_size);
+		if (!window) {
+			igen6_printk(KERN_ERR, "Failed to ioremap hbo%d\n", pmc);
+			return -ENOMEM;
+		}
+
+		msh = imc[i].msh;
+		for (j = 0; j < pvt->n_msh_levels; j++) {
+			val = readl(window + res_cfg->hbo_reg_msh_offset + j * 4);
+			edac_dbg(0, "pmc%d mem_slice_hash%d reg 0x%x\n", pmc, j, val);
+
+			msh->hash_enabled = field_get(res_cfg->hbo_reg_msh_hash_enabled_mask, val);
+			msh->hash_mask = res_cfg->hbo_reg_msh_hash_mask_mask & val;
+			msh->intlv_bit = field_get(res_cfg->hbo_reg_msh_hash_lsb_mask, val) + 6;
+			msh->slice_l_id = field_get(res_cfg->hbo_reg_msh_non_intlv_select_mask, val);
+			msh->slice_s_size = field_get(res_cfg->hbo_reg_msh_intlv_cap_mask, val) *
+					    res_cfg->hbo_reg_msh_intlv_cap_granularity / 2;
+
+			edac_dbg(0, "slice_s_size: %llu MiB, slice_l_id %d, hash_enabled %d, hash_mask 0x%llx, intlv_bit %d\n",
+				 msh->slice_s_size >> 20, msh->slice_l_id,
+				 msh->hash_enabled, msh->hash_mask, msh->intlv_bit);
+			msh++;
+		}
+
+		iounmap(window);
+	}
+
+	return 0;
+};
 
 static struct res_config ehl_cfg = {
 	.num_imc		= 1,
@@ -1067,6 +1226,46 @@ static struct res_config nvl_h_cfg = {
 	.err_addr_to_imc_addr		= adl_err_addr_to_imc_addr,
 };
 
+static struct res_config ttl_cfg = {
+	.machine_check				= true,
+	.reg_mchbar_mask			= GENMASK_ULL(41, 17),
+	.reg_tom_mask				= GENMASK_ULL(41, 20),
+	.reg_touud_mask				= GENMASK_ULL(41, 20),
+	.reg_eccerrlog_addr_mask		= GENMASK_ULL(38, 5),
+	.reg_mem_config_offset			= 0x12930,
+	.reg_mem_config_ddr_type_mask		= GENMASK(11, 10),
+	.reg_mem_config_ibecc_en_mask		= GENMASK(8, 8),
+	.reg_mad_inter_size_mask[0]		= GENMASK(15, 8),
+	.reg_mad_inter_size_mask[1]		= GENMASK(23, 16),
+	.reg_mad_inter_size_granularity		= BIT_ULL(29),
+	.reg_mad_intra_rank_mask[0]		= BIT(7),
+	.reg_mad_intra_rank_mask[1]		= BIT(15),
+	.reg_mad_intra_width_mask[0]		= BIT(6),
+	.reg_mad_intra_width_mask[1]		= BIT(14),
+	.reg_mad_intra_density_mask[0]		= GENMASK(4, 0),
+	.reg_mad_intra_density_mask[1]		= GENMASK(12, 8),
+	.imc_base				= 0xd800,
+	.hbo_base				= 0x10000,
+	.hbo_size				= 0x400,
+	.hbo_reg_msh_offset			= 0x200,
+	.hbo_reg_msh_hash_enabled_mask		= BIT(0),
+	.hbo_reg_msh_hash_lsb_mask		= GENMASK(4, 2),
+	.hbo_reg_msh_hash_mask_mask		= GENMASK(19, 6),
+	.hbo_reg_msh_intlv_cap_mask		= GENMASK(31, 20),
+	.hbo_reg_msh_intlv_cap_granularity	= BIT_ULL(30),
+	.hbo_reg_msh_non_intlv_select_mask	= BIT(1),
+	.ibecc_base				= 0xd400,
+	.ibecc_error_log_offset			= 0x170,
+	.get_mem_type				= ttl_get_mem_type,
+	.get_dev_type				= ttl_get_dev_type,
+	.set_chan_params			= ptl_h_set_chan_params,
+	.set_dimm_params			= ttl_set_dimm_params,
+	.set_memory_slice_hash			= ttl_set_memory_slice_hash,
+	.ibecc_available			= generic_ibecc_available,
+	.err_addr_to_sys_addr			= tgl_err_addr_to_sys_addr,
+	.err_addr_to_imc_addr			= tgl_err_addr_to_imc_addr,
+};
+
 static struct pci_device_id igen6_pci_tbl[] = {
 	{ PCI_VDEVICE(INTEL, DID_EHL_SKU5), .driver_data = (kernel_ulong_t)&ehl_cfg },
 	{ PCI_VDEVICE(INTEL, DID_EHL_SKU6), .driver_data = (kernel_ulong_t)&ehl_cfg },
@@ -1139,6 +1338,7 @@ static struct pci_device_id igen6_pci_tbl[] = {
 	{ PCI_VDEVICE(INTEL, DID_NVL_H_SKU2), .driver_data = (kernel_ulong_t)&nvl_h_cfg },
 	{ PCI_VDEVICE(INTEL, DID_NVL_H_SKU3), .driver_data = (kernel_ulong_t)&nvl_h_cfg },
 	{ PCI_VDEVICE(INTEL, DID_NVL_H_SKU4), .driver_data = (kernel_ulong_t)&nvl_h_cfg },
+	{ PCI_VDEVICE(INTEL, DID_TTL_SKU1), .driver_data = (kernel_ulong_t)&ttl_cfg },
 	{ },
 };
 MODULE_DEVICE_TABLE(pci, igen6_pci_tbl);
