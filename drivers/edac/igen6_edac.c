@@ -267,6 +267,10 @@ static struct res_config {
 	u64 (*err_addr_to_sys_addr)(u64 eaddr, int mc);
 	/* Convert error address logged in IBECC to integrated memory controller address */
 	u64 (*err_addr_to_imc_addr)(u64 eaddr, int mc);
+#ifdef CONFIG_EDAC_DEBUG
+	/* Convert system physical address to error address logged in IBECC */
+	struct slice (*sys_addr_to_err_addr)(u64 sys_addr);
+#endif
 } *res_cfg;
 
 /* The top of low usable DRAM */
@@ -679,6 +683,47 @@ static int get_imc_num(u64 mchbar)
 
 	return lmc;
 }
+
+#ifdef CONFIG_EDAC_DEBUG
+/* @sys_addr must be a system physical address for memory not MMIO hole */
+static u64 sys_addr_to_mem_addr(u64 sys_addr)
+{
+	if (sys_addr < igen6_tom)
+		return sys_addr;
+
+	return sys_addr - igen6_tom + igen6_tolud;
+}
+
+static struct slice mem_addr_to_slice(u64 mem_addr)
+{
+        struct memory_slice_hash *msh = igen6_pvt->imc[0].msh;
+        struct slice slice;
+
+        translate_to_lower_level(mem_addr, msh->hash_mask, 0,
+                                 msh->intlv_bit, msh->slice_s_size,
+                                 msh->slice_l_id, &slice);
+
+        return slice;
+}
+
+static struct slice tgl_sys_addr_to_err_addr(u64 sys_addr)
+{
+        return mem_addr_to_slice(sys_addr_to_mem_addr(sys_addr));
+}
+
+static struct slice adl_sys_addr_to_err_addr(u64 sys_addr)
+{
+        u64 mem_addr = sys_addr_to_mem_addr(sys_addr);
+        struct slice slice = mem_addr_to_slice(mem_addr);
+
+        /*
+         * ADL error address logged in IBECC remains the
+         * interleaved bit between MCs.
+         */
+        slice.addr = mem_addr;
+        return slice;
+}
+#endif
 
 static bool ehl_ibecc_available(struct pci_dev *pdev)
 {
@@ -1113,6 +1158,9 @@ static struct res_config tgl_cfg = {
 	.ibecc_available		= tgl_ibecc_available,
 	.err_addr_to_sys_addr		= tgl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr		= tgl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr		= tgl_sys_addr_to_err_addr,
+#endif
 };
 
 /* Shared by Alder Lake, Alder Lake-N, Arizona Beach, Amston Lake, and Raptor Lake-P */
@@ -1129,6 +1177,9 @@ static struct res_config adl_cfg = {
 	.ibecc_available	= tgl_ibecc_available,
 	.err_addr_to_sys_addr	= adl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr	= adl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr	= adl_sys_addr_to_err_addr,
+#endif
 };
 
 static struct res_config mtl_ps_cfg = {
@@ -1146,6 +1197,9 @@ static struct res_config mtl_ps_cfg = {
 	.ibecc_available			= generic_ibecc_available,
 	.err_addr_to_sys_addr			= adl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr			= adl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr			= adl_sys_addr_to_err_addr,
+#endif
 };
 
 /* Shared by Meteor Lake-P, Arrow Lake-UH, and Wildcat Lake */
@@ -1162,6 +1216,9 @@ static struct res_config mtl_p_cfg = {
 	.ibecc_available	= mtl_p_ibecc_available,
 	.err_addr_to_sys_addr	= adl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr	= adl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr	= adl_sys_addr_to_err_addr,
+#endif
 };
 
 /* Shared by Panther Lake-H and Starfire */
@@ -1193,6 +1250,9 @@ static struct res_config ptl_h_cfg = {
 	.ibecc_available		= mtl_p_ibecc_available,
 	.err_addr_to_sys_addr		= adl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr		= adl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr	= adl_sys_addr_to_err_addr,
+#endif
 };
 
 static struct res_config nvl_h_cfg = {
@@ -1224,6 +1284,9 @@ static struct res_config nvl_h_cfg = {
 	.ibecc_available		= generic_ibecc_available,
 	.err_addr_to_sys_addr		= adl_err_addr_to_sys_addr,
 	.err_addr_to_imc_addr		= adl_err_addr_to_imc_addr,
+#ifdef CONFIG_EDAC_DEBUG
+	.sys_addr_to_err_addr	= adl_sys_addr_to_err_addr,
+#endif
 };
 
 static struct res_config ttl_cfg = {
@@ -1821,6 +1884,7 @@ static struct dentry *igen6_test;
 
 static int debugfs_u64_set(void *data, u64 val)
 {
+	struct slice slice = {val, 0};
 	u64 ecclog;
 
 	if ((val >= igen6_tolud && val < _4GB) || val >= igen6_touud) {
@@ -1830,9 +1894,12 @@ static int debugfs_u64_set(void *data, u64 val)
 
 	pr_warn_once("Fake error to 0x%llx injected via debugfs\n", val);
 
-	ecclog = (val & res_cfg->reg_eccerrlog_addr_mask) | ECC_ERROR_LOG_CE;
+	if (res_cfg->sys_addr_to_err_addr)
+		slice = res_cfg->sys_addr_to_err_addr(val);
 
-	if (!ecclog_gen_pool_add(0, ecclog))
+	ecclog = (slice.addr & res_cfg->reg_eccerrlog_addr_mask) | ECC_ERROR_LOG_CE;
+
+	if (!ecclog_gen_pool_add(slice.id, ecclog))
 		irq_work_queue(&ecclog_irq_work);
 
 	return 0;
