@@ -519,6 +519,7 @@ static struct res_config dmr_cfg = {
 
 static const struct x86_cpu_id imh_cpuids[] = {
 	X86_MATCH_VFM(INTEL_DIAMONDRAPIDS_X, &dmr_cfg),
+	X86_MATCH_VFM(INTEL_ATOM_PALMRIDGE, &dmr_cfg),
 	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, imh_cpuids);
