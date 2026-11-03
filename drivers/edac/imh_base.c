@@ -24,9 +24,6 @@
 #define MMIO_BASE_H(reg)		(((u64)GET_BITFIELD(reg, 0, 29)) << 23)
 #define SOCKET_ID(reg)			GET_BITFIELD(reg, 0, 3)
 
-/* PUNIT */
-#define DDR_IMC_BITMAP(reg)		GET_BITFIELD(reg, 23, 30)
-
 /* Memory Controller */
 #define ECC_ENABLED(reg)		GET_BITFIELD(reg, 2, 2)
 #define DIMM_POPULATED(reg)		GET_BITFIELD(reg, 15, 15)
@@ -142,15 +139,17 @@ static bool read_local_reg(struct local_reg *reg)
 static u32 get_imc_bitmap(struct res_config *cfg, int pkg, bool north)
 {
 	DEFINE_LOCAL_REG(reg, cfg, pkg, north, pcu, 0, capid3);
+	u32 bitmap;
 
 	if (!read_local_reg(&reg))
 		return 0;
 
-	edac_dbg(2, "Pkg%d %s mc instances bitmap 0x%llx (reg 0x%llx)\n",
-		 pkg, north ? "north" : "south",
-		 DDR_IMC_BITMAP(reg.val), reg.val);
+	bitmap = GET_BITFIELD(reg.val, cfg->pcu_ddr_bitmap_lo, cfg->pcu_ddr_bitmap_hi);
 
-	return DDR_IMC_BITMAP(reg.val);
+	edac_dbg(2, "Pkg%d %s mc instances bitmap 0x%x (reg 0x%llx)\n",
+		 pkg, north ? "north" : "south", bitmap, reg.val);
+
+	return bitmap;
 }
 
 static void imc_release(struct device *dev)
@@ -503,6 +502,8 @@ static struct res_config dmr_cfg = {
 	.pcu_size			= 0x10000,
 	.pcu_reg_capid3_offset		= 0x290,
 	.pcu_reg_capid3_width		= 4,
+	.pcu_ddr_bitmap_lo		= 23,
+	.pcu_ddr_bitmap_hi		= 30,
 	.sca_base			= 0x24c000,
 	.sca_size			= 0x2500,
 	.sca_reg_tolm_offset		= 0x2100,
