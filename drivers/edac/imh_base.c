@@ -422,7 +422,7 @@ static int imh_get_dimm_config(struct mem_ctl_info *mci, struct res_config *cfg)
 	struct skx_imc *imc = pvt->imc;
 	struct dimm_info *dimm;
 	u32 mcmtr, dimmmtr;
-	int i, j, ndimms;
+	int i, j, ndimms, rc;
 
 	for (i = 0; i < imc->num_channels; i++) {
 		if (!imc->mbase)
@@ -439,8 +439,10 @@ static int imh_get_dimm_config(struct mem_ctl_info *mci, struct res_config *cfg)
 				continue;
 
 			dimm = edac_get_dimm(mci, i, j, 0);
-			ndimms += skx_get_dimm_info(dimmmtr, 0, 0, dimm,
-						    imc, i, j, cfg);
+			rc = skx_get_dimm_info(dimmmtr, 0, 0, dimm, imc, i, j, cfg);
+			if (!rc && cfg->type == COR)
+				return -EINVAL;
+			ndimms += rc;
 		}
 
 		if (ndimms && !ecc_enabled(mcmtr)) {

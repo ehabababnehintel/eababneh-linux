@@ -617,9 +617,11 @@ int skx_get_src_id(struct skx_dev *d, int off, u8 *id)
 }
 EXPORT_SYMBOL_GPL(skx_get_src_id);
 
-static int get_width(u32 mtr)
+static int get_width(u32 mtr, enum type type)
 {
-	switch (GET_BITFIELD(mtr, 8, 9)) {
+	u32 width = type == COR ? GET_BITFIELD(mtr, 9, 10) : GET_BITFIELD(mtr, 8, 9);
+
+	switch (width) {
 	case 0:
 		return DEV_X4;
 	case 1:
@@ -765,8 +767,19 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 	u64 size;
 
 	ranks = numrank(mtr);
-	rows = numrow(mtr);
-	cols = imc->hbm_mc ? 6 : numcol(mtr);
+	if (cfg->type == COR) {
+		rows = skx_get_dimm_attr(mtr, 2, 4, 12, 1, 6, "rows");
+		cols = skx_get_dimm_attr(mtr, 0, 1, 10, 0, 1, "cols");
+		if (ranks < 0 || rows < 0 || cols < 0 ||
+		    get_width(mtr, cfg->type) == DEV_UNKNOWN) {
+			skx_printk(KERN_ERR, "Invalid Coral Rapids DIMMMTR 0x%x on mc%d ch%d dimm%d\n",
+				   mtr, imc->mc, chan, dimmno);
+			return 0;
+		}
+	} else {
+		rows = numrow(mtr);
+		cols = imc->hbm_mc ? 6 : numcol(mtr);
+	}
 
 	if (ranks < 0 || rows < 0 || cols < 0)
 		return 0;
@@ -800,7 +813,7 @@ int skx_get_dimm_info(u32 mtr, u32 mcmtr, u32 amap, struct dimm_info *dimm,
 
 	dimm->nr_pages = npages;
 	dimm->grain = 32;
-	dimm->dtype = get_width(mtr);
+	dimm->dtype = get_width(mtr, cfg->type);
 	dimm->mtype = mtype;
 	dimm->edac_mode = EDAC_SECDED; /* likely better than this */
 
