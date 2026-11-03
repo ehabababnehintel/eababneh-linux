@@ -210,6 +210,7 @@ enum type {
 	SPR,
 	GNR,
 	DMR,
+	COR,
 };
 
 enum {

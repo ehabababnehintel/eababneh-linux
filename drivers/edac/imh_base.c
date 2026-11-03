@@ -518,8 +518,53 @@ static struct res_config dmr_cfg = {
 	.reg_rrl_ddr[1]			= &dmr_reg_rrl_ddr_subch1,
 };
 
+/*
+ * Retain DMR's topology and access assumptions pending platform validation:
+ * one channel/two DIMMs per MC, Ubox access and MMIO_BASE shift, SCA memory
+ * limit scope, physical MC numbering, and HAMVF instance enumeration.
+ */
+static struct res_config cor_cfg = {
+	.type				= COR,
+	.support_ddr5			= true,
+	.mmio_base_l_north		= 0xf6800000,
+	.mmio_base_l_south		= 0xf6000000,
+	.ddr_chan_num			= 1,
+	.ddr_dimm_num			= 2,
+	.ddr_imc_base			= 0x39b000,
+	.ddr_chan_mmio_sz		= 0x8000,
+	.ddr_reg_mcmtr_offset		= 0x360,
+	.ddr_reg_mcmtr_width		= 4,
+	.ddr_reg_dimmmtr_offset		= 0x370,
+	.ddr_reg_dimmmtr_width		= 4,
+	.ubox_base			= 0x0,
+	.ubox_size			= 0x2000,
+	.ubox_reg_mmio_base_offset	= 0x580,
+	.ubox_reg_mmio_base_width	= 4,
+	.ubox_reg_socket_id_offset	= 0x1080,
+	.ubox_reg_socket_id_width	= 4,
+	.pcu_base			= 0x3000,
+	.pcu_size			= 0x10000,
+	.pcu_reg_capid3_offset		= 0x290,
+	.pcu_reg_capid3_width		= 4,
+	.pcu_ddr_bitmap_lo		= 20,
+	.pcu_ddr_bitmap_hi		= 29,
+	.sca_base			= 0x24c000,
+	.sca_size			= 0x2500,
+	.sca_reg_tolm_offset		= 0x2100,
+	.sca_reg_tolm_width		= 8,
+	.sca_reg_tohm_offset		= 0x2108,
+	.sca_reg_tohm_width		= 8,
+	.ha_base			= 0x3eb000,
+	.ha_size			= 0x1000,
+	.ha_reg_mode_offset		= 0x4a0,
+	.ha_reg_mode_width		= 4,
+	.reg_rrl_ddr[0]			= &dmr_reg_rrl_ddr_subch0,
+	.reg_rrl_ddr[1]			= &dmr_reg_rrl_ddr_subch1,
+};
+
 static const struct x86_cpu_id imh_cpuids[] = {
 	X86_MATCH_VFM(INTEL_DIAMONDRAPIDS_X, &dmr_cfg),
+	X86_MATCH_VFM(INTEL_CORALRAPIDS_X, &cor_cfg),
 	X86_MATCH_VFM(INTEL_ATOM_PALMRIDGE, &dmr_cfg),
 	{}
 };
