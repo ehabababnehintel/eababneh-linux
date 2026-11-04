@@ -174,12 +174,19 @@ static int __init ifs_init(void)
 		ifs_devices[i].rw_data.all_lp_join = ifs_devices[i].rw_data.generation ?
 						(msrval & MSR_INTEGRITY_CAPS_ALL_LP_JOIN) : true;
 
-		topology_cluster_matched(msrval);
+		/*
+		 * TID_BIT_SHIFT is not enumerated on SAF_GEN=0 platforms, so the
+		 * forced 'all_lp_join' there cannot be validated against it.
+		 */
+		if (ifs_devices[i].rw_data.generation) {
+			topology_cluster_matched(msrval);
 
-		if (ifs_devices[i].rw_data.all_lp_join && !topology_cluster_matched(msrval)) {
-			pr_err_once("TID_BIT_SHIFT mismatched topology_cluster_cpumask().\n");
-			ret = -EINVAL;
-			goto err_exit;
+			if (ifs_devices[i].rw_data.all_lp_join &&
+			    !topology_cluster_matched(msrval)) {
+				pr_err_once("TID_BIT_SHIFT mismatched topology_cluster_cpumask().\n");
+				ret = -EINVAL;
+				goto err_exit;
+			}
 		}
 
 		ifs_devices[i].rw_data.array_gen = (u32)m->driver_data;
