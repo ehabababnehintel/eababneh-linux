@@ -86,9 +86,9 @@
  *   # echo <CPU#> > /sys/devices/virtual/misc/intel_ifs_<n>/run_test
  *
  * Any CPU in the same group that shares the same SCAN test engin can be
- * specified to test its corresponding group. All CPUs in the same group
- * must be online to run a group test. It is only necessary to test one
- * CPU in the group.
+ * specified to test its corresponding group. Offline CPUs in the group do
+ * not take part in the test; if the test then does not pass, the driver
+ * warns. It is only necessary to test one CPU in the group.
  *
  * For e.g. to test a group corresponding to CPU5
  *
@@ -322,6 +322,7 @@ struct ifs_test_msrs {
  * @chunk_size: size of a test chunk
  * @array_gen: test generation of array test
  * @all_lp_join: all logical processors join test
+ * @tid_bit_shift: APIC-ID bits of the logical processors sharing a scan engine
  * @result_ptr: points to percpu result
  */
 struct ifs_data {
@@ -338,6 +339,7 @@ struct ifs_data {
 	u32	chunk_size;
 	u32	array_gen;
 	bool	all_lp_join;
+	u8	tid_bit_shift;
 	struct ifs_test_output __percpu *result_ptr;
 };
 

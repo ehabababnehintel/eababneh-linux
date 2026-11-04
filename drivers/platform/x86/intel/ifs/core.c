@@ -79,47 +79,6 @@ static struct ifs_device ifs_devices[] = {
 	},
 };
 
-/*
- * Test whether logical processors indicated by TID_BIT_SHIFT that share the
- * same SCAN test engine match the cpumask from topology_cluster_cpumask().
- */
-static bool topology_cluster_matched(u32 msrval)
-{
-	u32 dist, shift = FIELD_GET(MSR_INTEGRITY_CAPS_TID_BIT_SHIFT_MASK, msrval);
-	const cpumask_t *cpumask = topology_cluster_cpumask(0);
-	u32 delta, step = 0, first = cpu_data(0).topo.apicid;
-	unsigned int cpu, cpus;
-
-	/* Get the minimal APIC ID step among the CPUs in the same cluster. */
-	for_each_cpu_andnot(cpu, cpumask, cpumask_of(0)) {
-		delta = abs(cpu_data(cpu).topo.apicid - first);
-
-		if (!step) {
-			step = delta;
-			continue;
-		}
-
-		if (step > delta)
-			step = delta;
-	}
-
-	/* A Hyper-Threading (HT) system with HT disabled. */
-	if (!step)
-		step = 2;
-
-	cpus = cpumask_weight(cpumask);
-	dist = step * cpus;
-
-	if (dist != (1 << shift)) {
-		pr_err_once("APICID step %u, group cpus %u, TID_BIT_SHIFT %u\n", step, cpus, shift);
-		return false;
-	}
-
-	pr_info("matched: APICID step %u, group cpus %u, TID_BIT_SHIFT %u, msrval 0x%x\n", step, cpus, shift, msrval);
-
-	return true;
-}
-
 #define IFS_NUMTESTS ARRAY_SIZE(ifs_devices)
 
 static void ifs_cleanup(void)
@@ -174,20 +133,10 @@ static int __init ifs_init(void)
 		ifs_devices[i].rw_data.all_lp_join = ifs_devices[i].rw_data.generation ?
 						(msrval & MSR_INTEGRITY_CAPS_ALL_LP_JOIN) : true;
 
-		/*
-		 * TID_BIT_SHIFT is not enumerated on SAF_GEN=0 platforms, so the
-		 * forced 'all_lp_join' there cannot be validated against it.
-		 */
-		if (ifs_devices[i].rw_data.generation) {
-			topology_cluster_matched(msrval);
-
-			if (ifs_devices[i].rw_data.all_lp_join &&
-			    !topology_cluster_matched(msrval)) {
-				pr_err_once("TID_BIT_SHIFT mismatched topology_cluster_cpumask().\n");
-				ret = -EINVAL;
-				goto err_exit;
-			}
-		}
+		/* TID_BIT_SHIFT is only enumerated on SAF_GEN=2 and later */
+		if (ifs_devices[i].rw_data.generation)
+			ifs_devices[i].rw_data.tid_bit_shift =
+				FIELD_GET(MSR_INTEGRITY_CAPS_TID_BIT_SHIFT_MASK, msrval);
 
 		ifs_devices[i].rw_data.array_gen = (u32)m->driver_data;
 		ret = misc_register(&ifs_devices[i].misc);
