@@ -332,6 +332,8 @@ struct res_config {
 			u32 pcu_size;
 			u32 pcu_reg_capid3_offset;
 			u8  pcu_reg_capid3_width;
+			u32 pcu_reg_capid10_offset;
+			u8  pcu_reg_capid10_width;
 			u8  pcu_ddr_bitmap_lo;
 			u8  pcu_ddr_bitmap_hi;
 			u64 sca_base;

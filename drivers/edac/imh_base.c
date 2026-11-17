@@ -23,6 +23,9 @@
 /* Configuration Agent(Ubox) */
 #define MMIO_BASE_H(reg)		(((u64)GET_BITFIELD(reg, 0, 29)) << 23)
 #define SOCKET_ID(reg)			GET_BITFIELD(reg, 0, 3)
+#define DIELET_TYPE_ID(reg)		GET_BITFIELD(reg, 16, 31)
+#define DIELET_TYPE_IMH1		0x11f1
+#define DIELET_TYPE_IMH2		0x11f2
 
 /* Memory Controller */
 #define ECC_ENABLED(reg)		GET_BITFIELD(reg, 2, 2)
@@ -135,11 +138,28 @@ static bool read_local_reg(struct local_reg *reg)
 	return true;
 }
 
+static bool imh_die_present(struct res_config *cfg, int pkg, bool north)
+{
+	DEFINE_LOCAL_REG(reg, cfg, pkg, north, pcu, 0, capid10);
+
+	if (!cfg->pcu_reg_capid10_width)
+		return true;
+
+	if (!read_local_reg(&reg))
+		return false;
+
+	return DIELET_TYPE_ID(reg.val) == DIELET_TYPE_IMH1 ||
+	       DIELET_TYPE_ID(reg.val) == DIELET_TYPE_IMH2;
+}
+
 /* Get the bitmap of memory controller instances in package @pkg. */
 static u32 get_imc_bitmap(struct res_config *cfg, int pkg, bool north)
 {
 	DEFINE_LOCAL_REG(reg, cfg, pkg, north, pcu, 0, capid3);
 	u32 bitmap;
+
+	if (!imh_die_present(cfg, pkg, north))
+		return 0;
 
 	if (!read_local_reg(&reg))
 		return 0;
@@ -292,7 +312,7 @@ static int imh_get_all_mmio_base_h(struct res_config *cfg, struct list_head *eda
 		/* Get MMIO_BASE_H for the south-IMH (optional). */
 		DEFINE_LOCAL_REG(reg2, cfg, i, false, ubox, 0, mmio_base);
 
-		if (read_local_reg(&reg2)) {
+		if (imh_die_present(cfg, i, false) && read_local_reg(&reg2)) {
 			d->mmio_base_h_south = MMIO_BASE_H(reg2.val);
 			edac_dbg(2, "Pkg%d south mmio_base_h 0x%llx (reg 0x%llx)\n",
 				 i, d->mmio_base_h_south, reg2.val);
@@ -504,6 +524,8 @@ static struct res_config dmr_cfg = {
 	.pcu_size			= 0x10000,
 	.pcu_reg_capid3_offset		= 0x290,
 	.pcu_reg_capid3_width		= 4,
+	.pcu_reg_capid10_offset		= 0x2c0,
+	.pcu_reg_capid10_width		= 4,
 	.pcu_ddr_bitmap_lo		= 23,
 	.pcu_ddr_bitmap_hi		= 30,
 	.sca_base			= 0x24c000,
