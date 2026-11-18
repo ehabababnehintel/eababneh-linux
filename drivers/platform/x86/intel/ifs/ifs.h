@@ -297,6 +297,7 @@ struct ifs_test_msrs {
  * @chunk_size: size of a test chunk
  * @array_gen: test generation of array test
  * @all_lp_join: all logical processors join test
+ * @tid_bit_shift: APIC-ID bits of the logical processors sharing a scan engine
  */
 struct ifs_data {
 	cpumask_t	grp_cpumask;
@@ -311,6 +312,7 @@ struct ifs_data {
 	u32	chunk_size;
 	u32	array_gen;
 	bool	all_lp_join;
+	u8	tid_bit_shift;
 };
 
 struct ifs_work {
